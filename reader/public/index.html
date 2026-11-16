@@ -34,6 +34,8 @@
             <kbd class="search-key" id="search-key" aria-hidden="true"></kbd>
             <div class="search-popover" id="search-results" role="listbox" aria-label="Search results" hidden></div>
           </form>
+
+          <button class="header-button user-info-button" id="user-info-button" type="button">User info</button>
         </nav>
       </header>
 
@@ -47,6 +49,9 @@
     </aside>
 
     <div class="visually-hidden" id="status" role="status" aria-live="polite"></div>
+
+    <!-- Demo dialogs (sign-in, log activity, clear local data) mount here. -->
+    <div id="demo-dialog-host"></div>
 
     <script type="module" src="/app.js"></script>
   </body>

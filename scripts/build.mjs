@@ -3,8 +3,8 @@ import { resolve } from 'node:path';
 import { loadFrontmatterParser, loadVault } from '../reader/src/vault.js';
 import { createRenderer } from '../reader/src/render.js';
 
-const root = resolve('vault');
-const out = resolve('dist');
+const root = resolve(process.env.VAULT_ROOT ?? 'vault');
+const out = resolve(process.env.OUT_DIR ?? 'dist');
 await loadFrontmatterParser();
 const vault = await loadVault(root);
 if (!vault.notes.has('Base Note')) throw new Error('The public home note vault/Base Note.md is missing');
@@ -23,7 +23,11 @@ for (const note of vault.noteList()) {
       `src="./assets/${decodeURIComponent(path).split('/').map(encodeURIComponent).join('/')}"`);
   notes[note.id] = {
     id: note.id, title: note.title, source: 'vault', html,
-    text: note.body, obsidianUrl: null, frontmatter: {},
+    text: note.body, obsidianUrl: null,
+    // The one frontmatter field the reader is allowed to see, and only as a
+    // boolean: `activity: true` turns on the local logging control. Raw
+    // frontmatter is never published.
+    activity: note.frontmatter.activity === true,
     links: note.links.filter(link => link.kind === 'note'), backlinks: note.backlinks,
   };
 }

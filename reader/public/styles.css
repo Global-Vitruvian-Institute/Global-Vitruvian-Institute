@@ -912,6 +912,621 @@ input {
   }
 }
 
+/* ------------------------------------------------------------ demo (local) ---
+
+   The participation demo borrows the reader's tokens and pane width and adds
+   nothing global. Everything below is namespaced `demo-` (plus the single
+   header entry) so it cannot leak into the notes themselves. */
+
+.user-info-button {
+  flex: 0 0 auto;
+}
+
+.note-content .demo-title {
+  margin-bottom: 0.4em;
+}
+
+.note-content .demo-lede {
+  margin: 0 0 1em;
+  color: var(--ink-soft);
+  font-family: var(--font-ui);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.note-content .demo-caption {
+  margin: 0.5em 0 0;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.note-content .demo-note {
+  margin: 1.6em 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface-quiet);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.note-content .demo-section {
+  margin: 1.8em 0 0;
+  padding-top: 1.1em;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+
+.note-content .demo-section-title {
+  margin: 0 0 0.7em;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.note-content .demo-facts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.note-content .demo-fact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.note-content .demo-fact-label {
+  color: var(--ink-soft);
+}
+
+.note-content .demo-fact-value {
+  color: var(--ink);
+  text-align: right;
+}
+
+/* --------------------------------------------------------------- controls --- */
+
+.note-content .demo-form {
+  margin: 0;
+  font-family: var(--font-ui);
+}
+
+.note-content .demo-field + .demo-field {
+  margin-top: 0.9em;
+}
+
+.note-content .demo-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.note-content .demo-control,
+.demo-dialog .demo-control {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.note-content textarea.demo-control,
+.demo-dialog textarea.demo-control {
+  resize: vertical;
+}
+
+.note-content .demo-control:focus,
+.demo-dialog .demo-control:focus {
+  border-color: var(--rule-strong);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(42, 110, 179, 0.14);
+}
+
+.note-content .demo-control[aria-invalid="true"],
+.demo-dialog .demo-control[aria-invalid="true"] {
+  border-color: #b4656a;
+}
+
+.demo-dialog input[type="file"].demo-control {
+  padding: 5px 7px;
+  font-size: 12.5px;
+}
+
+.demo-dialog input[type="file"]::file-selector-button {
+  margin-right: 8px;
+  padding: 4px 9px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background: var(--surface-quiet);
+  color: var(--ink-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.note-content .demo-hint {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.note-content .demo-error,
+.demo-dialog .demo-error {
+  margin: 5px 0 0;
+  color: #e6a3a7;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.note-content .demo-actions,
+.note-content .demo-row-actions,
+.demo-dialog .demo-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 0.9em;
+}
+
+.note-content .demo-button,
+.demo-dialog .demo-button {
+  padding: 6px 11px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 5px;
+  background: var(--surface-quiet);
+  color: var(--ink-soft);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.note-content .demo-button:hover,
+.demo-dialog .demo-button:hover {
+  border-color: var(--ink-soft);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.note-content .demo-button:disabled,
+.demo-dialog .demo-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.note-content .demo-button.demo-button-primary,
+.demo-dialog .demo-button.demo-button-primary {
+  border-color: #3f6d9c;
+  background: #22344a;
+  color: var(--ink);
+}
+
+.note-content .demo-button.demo-button-danger:hover,
+.demo-dialog .demo-button.demo-button-danger:hover {
+  border-color: #b4656a;
+  color: #f0c3c6;
+}
+
+.note-content .demo-button.demo-button-small,
+.demo-dialog .demo-button.demo-button-small {
+  padding: 4px 9px;
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------- sign in --- */
+
+.note-content .demo-code,
+.demo-dialog .demo-code {
+  margin: 0 0 0.9em;
+  padding: 9px 11px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 5px;
+  color: var(--ink-soft);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.note-content .demo-code-value,
+.demo-dialog .demo-code-value {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #292e33;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  letter-spacing: 0.08em;
+}
+
+/* ----------------------------------------------------------- submissions --- */
+
+.note-content .demo-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-content .demo-row {
+  padding: 12px 13px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface-quiet);
+  font-size: 13.5px;
+}
+
+.note-content .demo-row-compact {
+  padding: 10px 12px;
+}
+
+.note-content .demo-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.note-content .demo-row-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.note-content .demo-row-author {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.note-content .demo-row-meta {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.note-content .demo-status {
+  padding: 2px 7px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.note-content .demo-status-verified {
+  border-color: #4b7a5c;
+  color: #a9d6b6;
+}
+
+.note-content .demo-status-changes_requested {
+  border-color: #8a6a3c;
+  color: #e3c48f;
+}
+
+.note-content .demo-status-plain {
+  border-color: var(--rule);
+  color: var(--muted);
+}
+
+.note-content .demo-reflection {
+  margin: 0.7em 0 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.note-content .demo-feedback {
+  margin: 0.7em 0 0;
+  padding-left: 10px;
+  border-left: 2px solid #8a6a3c;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.note-content .demo-evidence {
+  display: grid;
+  gap: 8px;
+  margin: 0.8em 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-content .demo-evidence-item {
+  padding: 8px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.note-content .demo-evidence-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+}
+
+.note-content .demo-evidence-name {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.note-content .demo-evidence-meta {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.note-content .demo-evidence-image {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  margin-top: 8px;
+  border-radius: 3px;
+  background: #0f1113;
+}
+
+.note-content .demo-evidence-download {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.note-content .demo-history {
+  margin-top: 0.8em;
+  font-size: 12.5px;
+}
+
+.note-content .demo-history-summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.note-content .demo-history-list {
+  display: grid;
+  gap: 7px;
+  margin: 0.7em 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-content .demo-history-item {
+  padding-left: 10px;
+  border-left: 1px solid var(--rule);
+}
+
+.note-content .demo-history-status {
+  color: var(--ink-soft);
+}
+
+.note-content .demo-history-meta {
+  margin-left: 8px;
+  color: var(--muted);
+}
+
+.note-content .demo-history-feedback {
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.note-content .demo-review {
+  margin-top: 1em;
+  padding-top: 0.9em;
+  border-top: 1px solid var(--rule);
+}
+
+/* ------------------------------------------------------------- portfolio --- */
+
+.note-content .demo-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-content .demo-gallery-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 10px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface-quiet);
+}
+
+.note-content .demo-gallery-title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.note-content .demo-gallery-meta {
+  flex: 0 0 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.note-content .demo-gallery-excerpt {
+  flex: 0 0 100%;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------- activity entry point --- */
+
+.note-content .demo-activity-actions {
+  max-width: 545px;
+  margin: 2.4em auto 0;
+  padding-top: 1.1em;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+
+.note-content .demo-activity-actions .demo-caption {
+  margin-top: 6px;
+}
+
+.note-content .demo-failure {
+  font-family: var(--font-ui);
+}
+
+/* --------------------------------------------------------------- dialog --- */
+
+.demo-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(84vh, 720px);
+  overflow-y: auto;
+  padding: 20px 22px 22px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.demo-dialog::backdrop {
+  background: rgba(8, 9, 10, 0.6);
+}
+
+.demo-dialog-title {
+  margin: 0 0 0.6em;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.demo-dialog-body .demo-lede {
+  margin: 0 0 1em;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.demo-dialog-body .demo-note {
+  margin: 1.2em 0 0;
+  padding: 9px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface-quiet);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.demo-dialog-body .demo-caption {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.demo-dialog-body .demo-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.demo-dialog-body .demo-hint {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.demo-dialog-body .demo-field + .demo-field {
+  margin-top: 0.9em;
+}
+
+.demo-dialog .demo-dialog-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 800px) {
+  .note-content .demo-activity-actions {
+    margin-top: 1.8em;
+  }
+}
+
+@media (max-width: 560px) {
+  .demo-dialog {
+    padding: 16px 15px 18px;
+  }
+
+  .note-content .demo-gallery {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  /* The header carries four controls at this width. Give the title and the
+     search field less room rather than dropping a control; the field still
+     opens on focus, exactly as it does on a phone today. Measured with the
+     browser suite at 430, 390 and 360px. */
+  .app-title {
+    max-width: 12vw;
+    font-size: 13.5px;
+  }
+
+  .header-link,
+  .header-button {
+    font-size: 12px;
+  }
+
+  .app-nav {
+    gap: 6px;
+  }
+
+  .search {
+    width: 56px;
+  }
+
+  .search:focus-within {
+    width: min(48vw, 220px);
+  }
+
+  .search-input {
+    width: 100%;
+    padding-right: 8px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -15,6 +15,10 @@
 import { fetchStatic as fetch } from './static-api.js';
 import { wikipediaArticle } from './wikipedia.js';
 import { designPaneLayout, designContextRequest, designContextHeading } from './design-context.js';
+import { createDemoStore } from './demo-store.js';
+import { createDemoUi } from './demo-ui.js';
+import { createReadingTracker } from './demo-tracking.js';
+import { DEMO_PANE_ACCOUNT, DEMO_PANE_ADMIN, demoPaneLabel, isDemoPaneId } from './demo-model.js';
 
 const els = {
   title: document.getElementById('app-title'),
@@ -28,6 +32,7 @@ const els = {
   preview: document.getElementById('preview'),
   previewContent: document.getElementById('preview-content'),
   status: document.getElementById('status'),
+  userInfo: document.getElementById('user-info-button'),
 };
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -114,7 +119,7 @@ function designUrlFromPaneId(id) {
 }
 
 function isValidPaneId(id) {
-  return Boolean(designUrlFromPaneId(id)) || Boolean(wikipediaArticle(id)) || isValidNoteId(id);
+  return isDemoPaneId(id) || Boolean(designUrlFromPaneId(id)) || Boolean(wikipediaArticle(id)) || isValidNoteId(id);
 }
 
 function noteHref(id) {
@@ -224,6 +229,8 @@ function queryString(values) {
 }
 
 function friendlyName(id) {
+  const demoLabel = demoPaneLabel(id);
+  if (demoLabel) return demoLabel;
   const design = designUrlFromPaneId(id);
   if (design) {
     const file = decodeURIComponent(design.split('#')[0].split('/').pop() || 'Design example');
@@ -352,6 +359,10 @@ function renderStack({ focusElement = false, heading = null, animate = true } = 
   const token = ++renderToken;
   dismissPreview();
   closeSearch();
+  // A rebuild replaces every pane, so nothing inside one may outlive it.
+  demo?.closeDialogs();
+  for (const pane of state.panes) demo?.releasePane(pane);
+  tracker?.clearRendered();
 
   els.stack.replaceChildren();
   state.panes = [];
@@ -505,6 +516,30 @@ async function fillPane(pane, id, index, token, { heading, animate }) {
     return;
   }
 
+  const demoView = demoViewForPaneId(id);
+  if (demoView) {
+    article.removeAttribute('aria-busy');
+    backlinks.replaceChildren();
+    backlinks.hidden = true;
+    applyNoteTitle(pane, spineTitle, demoPaneLabel(id), index);
+    if (demo) {
+      // The demo rechecks this token after every await, exactly like a note.
+      await demo.renderPane(pane, demoView, {
+        isCurrent: () => token === renderToken && pane.isConnected,
+      });
+    } else {
+      article.replaceChildren();
+      const message = document.createElement('p');
+      message.className = 'demo-caption';
+      message.textContent = 'The local demo could not start in this browser.';
+      article.append(message);
+    }
+    if (token !== renderToken || !pane.isConnected) return;
+    restorePaneScroll(pane);
+    scheduleGeometry();
+    return;
+  }
+
   try {
     const note = await getNote(id);
     if (token !== renderToken || !pane.isConnected) return;
@@ -514,6 +549,12 @@ async function fillPane(pane, id, index, token, { heading, animate }) {
     if (note.source === 'wikipedia') renderWikipediaSource(article, note.sourceUrl);
     renderBacklinks(backlinks, note);
     applyNoteTitle(pane, spineTitle, note.title, index);
+    // The only hook into note rendering: one control, only when the frontmatter
+    // said `activity: true`. Previews and Markdown never reach this path.
+    demo?.decorateArticle(article, note);
+    // A page is counted only once the note has really rendered, and only for a
+    // note from the vault. Wikipedia articles and design panes are not pages.
+    if (note.source === 'vault') tracker?.markRendered(id);
 
     // The content (and so the scrollable height) is only real now.
     restorePaneScroll(pane);
@@ -695,10 +736,13 @@ function renderNoteError(article, footer, id, error) {
 
 function clearStackForMessage() {
   renderToken += 1;
+  for (const pane of state.panes) demo?.releasePane(pane);
   state.panes = [];
   els.stack.replaceChildren();
   dismissPreview();
   closeSearch();
+  tracker?.clearRendered();
+  tracker?.setActiveNote(null);
 }
 
 function renderBootstrapError(error) {
@@ -797,6 +841,29 @@ function updateCovered() {
     pane.classList.toggle('is-covered', covered);
     syncSheetVisibility(pane, index, narrow);
   }
+
+  // Reading is measured against the pane the reader is actually looking at: the
+  // one showing the most of itself inside the row. On a phone that is the only
+  // visible pane; on a wide screen it is the frontmost pane in view.
+  tracker?.setActiveNote(mostVisiblePaneId());
+}
+
+function mostVisiblePaneId() {
+  const row = els.stack.getBoundingClientRect();
+  let bestId = null;
+  let bestWidth = 0;
+  for (const pane of state.panes) {
+    const rect = pane.getBoundingClientRect();
+    const width = Math.max(0, Math.min(rect.right, row.right) - Math.max(rect.left, row.left));
+    // A pane hidden by the narrow layout, or scrolled out of the row, shows nothing.
+    if (width <= 0) continue;
+    // A tie goes to the later pane: in this stack the newest pane is in front.
+    if (width >= bestWidth - 0.5) {
+      bestWidth = width;
+      bestId = pane.dataset.noteId ?? null;
+    }
+  }
+  return bestId;
 }
 
 /**
@@ -1212,6 +1279,8 @@ function showPreview(link) {
 
   const id = link.dataset.noteId;
   if (!id || id === pane.dataset.noteId) return;
+  // A demo pane is a view, not a note: it has nothing to preview.
+  if (isDemoPaneId(id)) return;
 
   const rect = link.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
@@ -1264,6 +1333,154 @@ async function handleDesignContextMessage(event) {
     const index = state.panes.indexOf(pane);
     if (index !== -1) navigateFromPane(index, request.noteId, heading);
   } catch { /* Missing/private/out-of-scope notes cannot become message targets. */ }
+}
+
+/* ------------------------------------------------------------- the demo --- */
+
+/**
+ * The participation demo is additive and optional. It boots beside the reader,
+ * never in front of it: if the browser refuses local storage, the notes still
+ * load and the account pane explains why nothing can be saved.
+ */
+let demo = null;
+let demoStore = null;
+let tracker = null;
+/** Which account measured reading time should be credited to, at flush time. */
+let trackedAccountId = null;
+/** True while a reset is in progress: no new statistics write may be issued. */
+let trackingPaused = false;
+/** Already-issued statistics writes, so a reset can wait for them to land. */
+const trackingWrites = new Set();
+let trackingFailureReported = false;
+
+/**
+ * Observe one statistics write. The notes must keep working when storage does,
+ * so a failure is reported once through the reader's existing status line
+ * rather than thrown, and never silently dropped.
+ */
+function trackWrite(promise) {
+  if (!promise) return;
+  const observed = promise.catch(() => {
+    if (trackingFailureReported) return;
+    trackingFailureReported = true;
+    announce('Reading statistics could not be saved in this browser.');
+  });
+  trackingWrites.add(observed);
+  observed.then(() => trackingWrites.delete(observed));
+}
+
+/** Wait for every statistics write already issued to settle. */
+async function drainTrackingWrites() {
+  while (trackingWrites.size) {
+    await Promise.allSettled([...trackingWrites]);
+  }
+}
+
+function demoViewForPaneId(id) {
+  if (id === DEMO_PANE_ACCOUNT) return 'account';
+  if (id === DEMO_PANE_ADMIN) return 'admin';
+  return null;
+}
+
+/** Re-render every open demo pane, leaving ordinary note panes untouched. */
+function refreshDemoPanes() {
+  state.panes.forEach((pane, index) => {
+    const id = pane.dataset.noteId;
+    if (!demoViewForPaneId(id)) return;
+    fillPane(pane, id, index, renderToken, { heading: null, animate: false });
+  });
+}
+
+/**
+ * Keep the tracker in step with the demo session. The flush comes first and its
+ * write is awaited before the account id is replaced, so signing out (or
+ * switching accounts) neither loses nor misattributes the final stretch.
+ */
+async function syncDemoSession() {
+  const next = demo?.session?.id ?? null;
+  if (next !== trackedAccountId) {
+    tracker?.flush();
+    await drainTrackingWrites();
+    trackedAccountId = next;
+  }
+  tracker?.setSignedIn(Boolean(next));
+  refreshDemoPanes();
+}
+
+function initDemo() {
+  try {
+    demoStore = createDemoStore();
+  } catch {
+    return;
+  }
+
+  tracker = createReadingTracker({
+    onView: (noteId) => {
+      if (trackingPaused || !trackedAccountId) return;
+      trackWrite(demoStore?.recordNoteView(trackedAccountId, noteId));
+    },
+    onTime: (ms) => {
+      if (trackingPaused || !trackedAccountId) return;
+      trackWrite(demoStore?.addActiveTime(trackedAccountId, ms));
+    },
+  });
+
+  demo = createDemoUi({
+    store: demoStore,
+    announce,
+    openPane: (id) => navigateFromPane(state.stack.length - 1, id),
+    // Statistics must include the stretch the reader just finished, so settle
+    // the tracker and let its write land before a demo pane reads them.
+    settleTracking: async () => {
+      tracker?.settle();
+      await drainTrackingWrites();
+    },
+    beforeReset: async () => {
+      trackingPaused = true;
+      tracker?.discard();
+      await drainTrackingWrites();
+    },
+    afterReset: ({ ok } = {}) => {
+      trackingPaused = false;
+      trackingFailureReported = false;
+      // A successful reset deleted the account those writes belonged to; the
+      // session change that follows must not flush into it.
+      if (ok) trackedAccountId = null;
+    },
+  });
+
+  demo.onChange(syncDemoSession);
+  demo.onDialogChange(() => tracker?.setPaused(demo.hasOpenDialog()));
+  tracker.setVisible(document.visibilityState !== 'hidden');
+  tracker.start();
+
+  // Deliberately not awaited: a storage failure must not stop the notes loading.
+  demo.init().then(syncDemoSession).catch(() => {});
+}
+
+function openUserInfo() {
+  if (state.ready) {
+    const existing = state.stack.indexOf(DEMO_PANE_ACCOUNT);
+    // On a narrow screen only the last pane is shown. An account pane already
+    // open behind Admin would be centred but never seen, so move it to the end
+    // of the stack through the ordinary URL: Back still returns to the order it
+    // had, and desktop keeps its existing reveal behaviour.
+    if (existing !== -1 && existing !== state.stack.length - 1 && narrowLayout.matches) {
+      const next = [...state.stack.filter((id) => id !== DEMO_PANE_ACCOUNT), DEMO_PANE_ACCOUNT];
+      if (writeStackUrl(next)) {
+        state.stack = next;
+        renderStack({ focusElement: true, animate: true });
+        return;
+      }
+    }
+    navigateFromPane(state.stack.length - 1, DEMO_PANE_ACCOUNT);
+    return;
+  }
+  // The notes index failed to load, but this pane does not depend on it: it can
+  // still explain itself rather than leaving a button that does nothing.
+  if (!writeStackUrl([DEMO_PANE_ACCOUNT])) return;
+  state.stack = [DEMO_PANE_ACCOUNT];
+  renderStack({ animate: false });
 }
 
 /* ------------------------------------------------------------- listeners --- */
@@ -1369,6 +1586,9 @@ document.addEventListener('pointerdown', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  // A native modal dialog owns the keyboard while it is open. The reader's
+  // shortcuts must not pull focus out of a form the reader is filling in.
+  if (demo?.hasOpenDialog()) return;
   const key = event.key.toLowerCase();
   if ((event.metaKey || event.ctrlKey) && !event.altKey && key === 'k') {
     event.preventDefault();
@@ -1398,6 +1618,20 @@ window.addEventListener('resize', () => {
   scheduleGeometry();
   dismissPreview();
 });
+
+document.addEventListener('visibilitychange', () => {
+  tracker?.setVisible(document.visibilityState !== 'hidden');
+  // Hand over what was measured before the tab is frozen or closed.
+  if (document.visibilityState === 'hidden') tracker?.flush();
+});
+
+// Any real interaction is the reader being present; idleness is the absence of
+// all of these for a while. Passive: none of this changes the gesture.
+for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
+  document.addEventListener(type, () => tracker?.noteInteraction(), { passive: true });
+}
+
+els.userInfo.addEventListener('click', openUserInfo);
 
 // Crossing the breakpoint changes which sheets have a box at all. Widening
 // gives the row horizontal geometry back, so put the newest pane in view
@@ -1474,3 +1708,4 @@ document.addEventListener('mouseout', (event) => {
 
 els.key.textContent = isMac() ? '⌘K' : 'Ctrl K';
 boot();
+initDemo();
