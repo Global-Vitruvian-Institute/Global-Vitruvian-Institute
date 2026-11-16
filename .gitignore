@@ -1,0 +1,8 @@
+node_modules/
+dist/
+vault/.obsidian/
+.DS_Store
+*.tar.gz
+*.zip
+.env
+.env.*

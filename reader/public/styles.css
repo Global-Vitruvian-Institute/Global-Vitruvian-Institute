@@ -1,0 +1,924 @@
+/*
+ * stacked-notes
+ *
+ * The stack is a single horizontal scroller. Every pane is 625px wide and
+ * sticky at `40px * index`, so as the container scrolls successive panes slide
+ * over earlier ones and only the 40px spine of a covered pane stays visible.
+ * The constants below are the reference values; changing them changes the
+ * geometry the client measures at runtime.
+ *
+ * Every colour is a token on :root. A dark theme is a second token block
+ * (for example `[data-theme="dark"]`) that overrides these variables; nothing
+ * below hard-codes a page colour.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #141618;
+  --surface: #1b1e21;
+  --surface-quiet: #202428;
+  --ink: #e6e6e3;
+  --ink-soft: #b9bcbf;
+  --muted: #9b9fa4;
+  --rule: #34393f;
+  --rule-strong: #4b525a;
+  --link: #9bc4ef;
+  --link-hover: #c7e2ff;
+  --focus: #8bbdf2;
+
+  --header-height: 48px;
+  --pane-width: 625px;
+  --pane-reveal: 40px;
+  --spine-width: 40px;
+  --shadow-covered: 0 0 20px 4px rgba(0, 0, 0, 0.45);
+
+  --font-reading: ui-serif, Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--link);
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------- the frame --- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.app-header {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex: 0 0 var(--header-height);
+  align-items: center;
+  gap: 20px;
+  height: var(--header-height);
+  padding: 0 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.app-title {
+  overflow: hidden;
+  max-width: 38vw;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-title:hover {
+  color: var(--link);
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.header-link,
+.header-button {
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.header-button {
+  cursor: pointer;
+}
+
+.header-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.header-link:hover,
+.header-button:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* --------------------------------------------------------------- search --- */
+
+.search {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.search-input {
+  width: clamp(96px, 18vw, 190px);
+  height: 30px;
+  padding: 0 44px 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface-quiet);
+  font-size: 13px;
+}
+
+.search-input::placeholder {
+  color: var(--muted);
+}
+
+.search-input:focus {
+  border-color: var(--rule-strong);
+  outline: none;
+  background: var(--bg);
+  box-shadow: 0 0 0 2px rgba(42, 110, 179, 0.12);
+}
+
+.search-input:disabled {
+  opacity: 0.55;
+}
+
+.search-key {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  padding: 1px 4px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1.3;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.search-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  overflow-y: auto;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(60vh, 420px);
+  padding: 6px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 12px 32px rgba(20, 20, 20, 0.14);
+}
+
+.search-result {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.search-result + .search-result {
+  margin-top: 1px;
+}
+
+.search-result.is-active {
+  background: #293b4d;
+}
+
+.search-result-title {
+  display: block;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.search-result-snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.search-empty {
+  padding: 12px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* The results for the current query have not landed yet. */
+.search-pending {
+  font-style: italic;
+}
+
+/* ----------------------------------------------------------- the stack ----- */
+
+.stack {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: none;
+  scrollbar-color: var(--rule-strong) transparent;
+  scrollbar-width: thin;
+  isolation: isolate;
+}
+
+.pane {
+  position: sticky;
+  flex: 0 0 var(--pane-width);
+  width: var(--pane-width);
+  height: 100%;
+  min-height: 0;
+  /* Sticky offsets keep each pane's spine in view as the row scrolls. */
+  left: calc(var(--pane-reveal) * var(--index, 0));
+  /* 625 - 40: the reference sets the right offset as well as the left. */
+  right: -585px;
+  background: var(--surface);
+}
+
+.pane.is-overlapped {
+  box-shadow: var(--shadow-covered);
+}
+
+/* Close sits where a reader looks for it on a full pane, and moves into the
+   spine when the pane is collapsed — otherwise the only panes you could close
+   would be the ones already in front. */
+.pane-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms linear, background-color 120ms linear, color 120ms linear;
+}
+
+.pane:hover .pane-close,
+.pane:focus-within .pane-close,
+.pane-close:focus-visible {
+  opacity: 1;
+}
+
+.pane-close:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--ink);
+}
+
+.pane.is-covered .pane-close {
+  right: auto;
+  left: 4px;
+  width: 32px;
+  color: var(--ink-soft);
+  opacity: 0.5;
+}
+
+.pane.is-covered:hover .pane-close {
+  opacity: 1;
+}
+
+.pane-sheet {
+  overflow-x: hidden;
+  overflow-y: auto;
+  height: 100%;
+  padding: 44px 40px 96px;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--rule-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.pane.is-covered .pane-sheet {
+  display: none;
+}
+
+.pane-spine {
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  width: var(--spine-width);
+  height: 100%;
+  padding: 26px 0;
+}
+
+.pane.is-covered .pane-spine {
+  display: flex;
+}
+
+.pane-spine-title {
+  overflow: hidden;
+  max-height: 100%;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  writing-mode: vertical-lr;
+}
+
+.pane-spine-title:hover {
+  color: var(--link);
+}
+
+.pane:focus {
+  outline: none;
+}
+
+.pane:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------- reading surface --- */
+
+.note-content {
+  max-width: 545px;
+  margin: 0 auto;
+  overflow-wrap: break-word;
+  color: var(--ink);
+  font-family: var(--font-reading);
+  font-size: 17.5px;
+  line-height: 1.6;
+}
+
+.note-content h1,
+.note-content h2,
+.note-content h3,
+.note-content h4 {
+  margin: 1.5em 0 0.55em;
+  /* Headings are sans and text is serif, as on the reference site: the heading
+     reads as a label for the note, the body as the note itself. */
+  font-family: var(--font-ui);
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.012em;
+}
+
+.wikipedia-source {
+  margin-bottom: 20px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.note-content h1:first-child,
+.note-content h2:first-child,
+.note-content h3:first-child {
+  margin-top: 0;
+}
+
+.note-content h1 {
+  margin-bottom: 0.6em;
+  font-size: 27px;
+  letter-spacing: -0.018em;
+}
+
+.note-content h2 {
+  font-size: 21px;
+}
+
+.note-content h3 {
+  font-size: 18px;
+}
+
+.note-content h4 {
+  font-size: 16.5px;
+}
+
+.note-content p,
+.note-content ul,
+.note-content ol,
+.note-content blockquote,
+.note-content pre,
+.note-content table,
+.note-content figure {
+  margin: 0 0 1em;
+}
+
+.note-content ul,
+.note-content ol {
+  padding-left: 1.4em;
+}
+
+.note-content li {
+  margin: 0.18em 0;
+}
+
+.note-content li > ul,
+.note-content li > ol {
+  margin: 0.18em 0;
+}
+
+.note-content blockquote {
+  margin-left: 0;
+  padding-left: 1.1em;
+  border-left: 2px solid var(--rule);
+  color: var(--ink-soft);
+}
+
+.note-content a {
+  color: var(--link);
+  text-decoration-color: rgba(155, 196, 239, 0.45);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.note-content a:hover {
+  color: var(--link-hover);
+  text-decoration-color: currentColor;
+}
+
+.note-content a.note-link.missing,
+.note-content .note-link.missing {
+  color: var(--muted);
+  text-decoration: dashed underline;
+  text-decoration-color: var(--rule-strong);
+  cursor: help;
+}
+
+.note-content code {
+  padding: 0.12em 0.3em;
+  border-radius: 3px;
+  background: #292e33;
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.note-content pre {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: #171a1d;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.note-content pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.note-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 2px;
+}
+
+.note-content .missing-image {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.note-content hr {
+  height: 1px;
+  margin: 2em 0;
+  border: 0;
+  background: var(--rule);
+}
+
+.note-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.note-content th,
+.note-content td {
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.note-content th {
+  font-weight: 600;
+}
+
+.note-content :is(h1, h2, h3, h4, h5, h6) {
+  scroll-margin-top: 20px;
+}
+
+/* ------------------------------------------------------------- backlinks --- */
+
+.backlinks {
+  max-width: 545px;
+  margin: 3em auto 0;
+  padding-top: 1.25em;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+
+.backlinks-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 11px;
+}
+
+.obsidian-link {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.3;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.obsidian-link:hover,
+.obsidian-link:focus-visible {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.backlinks h2 {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.backlink-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.backlink-card {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface-quiet);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.backlink-card:hover {
+  border-color: var(--rule-strong);
+  background: var(--bg);
+}
+
+.backlink-title {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.backlink-id {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.backlinks-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* --------------------------------------------------------------- errors --- */
+
+.note-error,
+.stack-message {
+  max-width: 545px;
+  margin: 0 auto;
+  font-family: var(--font-ui);
+}
+
+.note-error h1,
+.stack-message h1 {
+  margin: 0 0 0.5em;
+  font-family: var(--font-reading);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.note-error p,
+.stack-message p {
+  margin: 0 0 1em;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.note-error-id {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.note-error .note-link,
+.stack-message button {
+  display: inline-block;
+  margin-top: 0.4em;
+  padding: 7px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 5px;
+  background: var(--surface-quiet);
+  color: var(--link);
+  font-size: 13.5px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.note-error .note-link:hover,
+.stack-message button:hover {
+  background: var(--bg);
+  border-color: var(--ink-soft);
+}
+
+.stack-message {
+  align-self: center;
+  margin: auto;
+  padding: 40px 24px;
+}
+
+/* A mounted prototype opens as its own stack pane. It retains its desktop
+   viewport and is scaled to the pane instead of reflowing into a phone layout. */
+.pane:has(.design-pane-viewport) { flex-basis: 920px; width: 920px; }
+.design-pane-viewport { overflow: hidden; width: 100%; border: 1px solid var(--rule); border-radius: 6px; }
+.design-pane-viewport iframe { display: block; width: 1180px; height: 780px; border: 0; transform-origin: top left; background: #131314; }
+
+/* Opt-in canvas profile: the viewer manages its own scale. Ordinary design
+   panes retain the existing desktop-preview sizing and behavior. */
+.pane.is-design-canvas:has(.design-pane-viewport) {
+  flex-basis: min(1480px, calc(100vw - 96px));
+  width: min(1480px, calc(100vw - 96px));
+}
+.pane.is-design-canvas .pane-sheet { padding: 38px 16px 16px; }
+.design-pane-viewport.is-canvas { height: max(460px, calc(100dvh - 126px)); }
+.design-pane-viewport.is-canvas iframe { width: 100%; height: 100%; background: #e7e6e2; }
+@media (max-width: 800px) {
+  .pane.is-design-canvas:has(.design-pane-viewport) { flex-basis: 100%; width: 100%; }
+  .pane.is-design-canvas .pane-sheet { padding: 34px 6px 6px; }
+}
+
+/* -------------------------------------------------------------- preview --- */
+
+.preview {
+  position: fixed;
+  z-index: 200;
+  overflow: hidden;
+  width: 500px;
+  height: 400px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: 0 14px 40px rgba(20, 20, 20, 0.18);
+  pointer-events: none;
+}
+
+.preview-scale {
+  width: 625px;
+  height: 500px;
+  transform: scale(0.8);
+  transform-origin: top left;
+}
+
+.preview-content {
+  max-width: none;
+  padding: 22px 24px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.preview-content h1 {
+  font-size: 24px;
+}
+
+.preview-loading {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+/* --------------------------------------------------------------- narrow --- */
+
+@media (max-width: 800px) {
+  .pane {
+    display: none;
+  }
+
+  .pane:last-child {
+    position: static;
+    display: block;
+    flex: 0 0 100%;
+    width: 100%;
+    height: 100%;
+    left: auto;
+    right: auto;
+    box-shadow: none;
+  }
+
+  /* The last pane is never a spine on a narrow screen. */
+  .pane:last-child .pane-sheet,
+  .pane:last-child.is-covered .pane-sheet {
+    display: block;
+    padding: 28px 22px 72px;
+  }
+
+  .pane:last-child .pane-spine,
+  .pane:last-child.is-covered .pane-spine {
+    display: none;
+  }
+
+  .stack {
+    overflow-x: hidden;
+  }
+
+  .app-header {
+    gap: 12px;
+    padding: 0 14px;
+  }
+
+  .app-title {
+    max-width: 34vw;
+  }
+
+  .app-nav {
+    gap: 10px;
+  }
+
+  /* On a phone the field is a button that becomes a field: a 90px input is
+     unusable, and the notes deserve the width. */
+  .search {
+    width: 84px;
+    transition: width 120ms ease;
+  }
+
+  .search:focus-within {
+    width: min(52vw, 260px);
+  }
+
+  .search:focus-within .search-input {
+    width: 100%;
+  }
+
+  .search-key {
+    display: none;
+  }
+
+  .preview {
+    display: none;
+  }
+
+  /* No hover on a touch screen, and only one pane is shown. */
+  .pane-close {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 560px) {
+  .search-key {
+    display: none;
+  }
+
+  .search-input {
+    padding-right: 10px;
+  }
+
+  .header-link,
+  .header-button {
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 430px) {
+  .app-header {
+    gap: 8px;
+    padding: 0 10px;
+  }
+
+  .app-nav {
+    gap: 8px;
+  }
+
+  .app-title {
+    max-width: 26vw;
+    font-size: 14px;
+  }
+
+  .search-input {
+    width: clamp(76px, 22vw, 96px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

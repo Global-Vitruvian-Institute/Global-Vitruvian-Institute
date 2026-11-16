@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>stacked-notes</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <a class="app-title" id="app-title" href="/">stacked-notes</a>
+
+        <nav class="app-nav" aria-label="Reader">
+          <a class="header-link about-link" id="about-link" href="/" hidden>About these notes</a>
+          <button class="header-button" id="random-button" type="button" hidden>Random</button>
+
+          <form class="search" id="search-form" role="search" autocomplete="off">
+            <input
+              class="search-input"
+              id="search-input"
+              type="search"
+              placeholder="Search"
+              role="combobox"
+              aria-label="Search notes"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="search-results"
+              autocomplete="off"
+              spellcheck="false"
+              disabled
+            >
+            <kbd class="search-key" id="search-key" aria-hidden="true"></kbd>
+            <div class="search-popover" id="search-results" role="listbox" aria-label="Search results" hidden></div>
+          </form>
+        </nav>
+      </header>
+
+      <main class="stack" id="stack" aria-label="Open notes"></main>
+    </div>
+
+    <aside class="preview" id="preview" aria-hidden="true" hidden>
+      <div class="preview-scale">
+        <article class="preview-content note-content" id="preview-content"></article>
+      </div>
+    </aside>
+
+    <div class="visually-hidden" id="status" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
