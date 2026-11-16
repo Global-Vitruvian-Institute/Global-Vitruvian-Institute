@@ -37,7 +37,7 @@ for (const asset of vault.assets.values()) {
   await mkdir(resolve(destination, '..'), { recursive: true });
   await cp(resolve(root, asset.path), destination);
 }
-const title = 'Global Vitruvian Institute';
+const title = 'Vitruvian Institute';
 await writeFile(resolve(out, 'notes.json'), JSON.stringify({
   bootstrap: {
     app: { title }, vault: { name: title, notes: vault.notes.size, warnings: [] },
@@ -46,7 +46,9 @@ await writeFile(resolve(out, 'notes.json'), JSON.stringify({
   }, notes,
 }));
 let shell = await readFile(resolve(out, 'index.html'), 'utf8');
-shell = shell.replace('<title>stacked-notes</title>', `<title>${title}</title>`)
+// The shell already carries the published title; this keeps the two in step if
+// the identity ever moves again, without depending on the old value.
+shell = shell.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
   .replaceAll('href="/"', 'href="./"')
   .replace('href="/styles.css"', 'href="./styles.css"')
   .replace('src="/app.js"', 'src="./app.js"');

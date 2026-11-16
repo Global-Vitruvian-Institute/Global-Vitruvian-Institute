@@ -47,8 +47,12 @@ test('static reader serves note, search, random and missing responses without a 
 
 test('shareable stack URLs work on GitHub Pages project paths', async () => {
   const app = await readFile('reader/public/app.js', 'utf8');
+  const route = await readFile('reader/public/view-route.js', 'utf8');
+  // The reader still writes a relative `?note=` href, and the stack is still read
+  // from repeated `stackedNotes` parameters — now in the pure route module.
   assert.match(app, /return '\.\/\?note='/);
-  assert.match(app, /params.getAll\('stackedNotes'\)/);
+  assert.match(route, /params\.getAll\(STACK_PARAM\)/);
+  assert.match(route, /params\.append\(STACK_PARAM, id\)/);
 });
 
 /* --------------------------------------------------- build: activity flag --- */
@@ -103,35 +107,115 @@ test('the build publishes only a boolean activity flag and no raw frontmatter', 
     assert.doesNotMatch(serialized, /ada@example\.com/);
     assert.doesNotMatch(serialized, /frontmatter/);
     assert.equal(built.notes['Money check-in'].title, 'Money check-in');
+
+    // The published identity is the institute name, not the repository name.
+    assert.equal(built.bootstrap.app.title, 'Vitruvian Institute');
+    assert.equal(built.bootstrap.vault.name, 'Vitruvian Institute');
+    const shell = await readFile(join(out, 'index.html'), 'utf8');
+    assert.match(shell, /<title>Vitruvian Institute<\/title>/);
+    assert.match(shell, /href="\.\/styles\.css"/);
+    assert.match(shell, /src="\.\/app\.js"/);
+    assert.match(shell, /href="\.\/"/);
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(out, { recursive: true, force: true });
   }
 });
 
+/* ---------------------------------------------------- identity and light --- */
+
+test('the published identity is Vitruvian Institute and the shell is light', async () => {
+  const html = await readFile('reader/public/index.html', 'utf8');
+  assert.match(html, /<title>Vitruvian Institute<\/title>/);
+  assert.match(html, /<meta name="color-scheme" content="light">/);
+  assert.match(html, />Vitruvian Institute<\/a>/);
+  assert.doesNotMatch(html, /stacked-notes/);
+
+  const css = await readFile('reader/public/styles.css', 'utf8');
+  assert.match(css, /color-scheme:\s*light;/);
+  assert.doesNotMatch(css, /color-scheme:\s*dark/);
+  // Reading text is the system sans stack, not a serif.
+  assert.match(css, /--font-reading:\s*var\(--font-ui\)/);
+
+  const app = await readFile('reader/public/app.js', 'utf8');
+  assert.match(app, /return state\.bootstrap\?\.app\?\.title \|\| 'Vitruvian Institute';/);
+
+  const build = await readFile('scripts/build.mjs', 'utf8');
+  assert.match(build, /const title = 'Vitruvian Institute';/);
+});
+
+test('the shell applies the saved appearance before first paint, in step with appearance.js', async () => {
+  const html = await readFile('reader/public/index.html', 'utf8');
+  const appearance = await readFile('reader/public/appearance.js', 'utf8');
+
+  const key = appearance.match(/APPEARANCE_KEY = '([^']+)'/)?.[1];
+  assert.ok(key, 'appearance.js must declare the storage key');
+  assert.match(html, new RegExp(`localStorage\\.getItem\\('${key}'\\)`));
+
+  const ids = [...appearance.matchAll(/^ {4}id: '([a-z-]+)',$/gm)].map((match) => match[1]);
+  assert.deepEqual(ids, ['clear', 'paper', 'lilac']);
+  for (const id of ids) {
+    assert.match(html, new RegExp(`saved === '${id}'`), `the shell must accept the ${id} preset`);
+  }
+  // The inline script must run before the stylesheet, so nothing flashes.
+  assert.ok(html.indexOf('vitruvian.appearance') < html.indexOf('rel="stylesheet"'));
+});
+
 /* ------------------------------------------------- reader regression hooks --- */
 
-test('the demo is additive: virtual panes resolve before any note request', async () => {
+test('account views are a separate page region, not panes in the stack', async () => {
+  const app = await readFile('reader/public/app.js', 'utf8');
+  const html = await readFile('reader/public/index.html', 'utf8');
+  const route = await readFile('reader/public/view-route.js', 'utf8');
+  const ui = await readFile('reader/public/demo-ui.js', 'utf8');
+
+  // The reading stack and the account region are siblings, and only one of them
+  // is ever exposed.
+  assert.match(html, /<main class="stack" id="stack"/);
+  assert.match(html, /<main class="account" id="account" hidden/);
+  assert.match(app, /function showRegion\(view\)/);
+  assert.match(app, /els\.stack\.hidden = account;/);
+  assert.match(app, /els\.account\.hidden = !account;/);
+
+  // The reserved pane ids are still read out of old URLs and migrated, but they
+  // can never be opened as a reader pane again.
+  assert.match(app, /if \(isDemoPaneId\(id\)\) return false;/);
+  assert.match(app, /const parsed = parseViewRoute\(window\.location\.search, window\.location\.hash\);/);
+  assert.match(route, /'demo:account': VIEW_ACCOUNT/);
+  assert.match(route, /'demo:admin': VIEW_ADMIN/);
+  assert.doesNotMatch(app, /DEMO_PANE_ACCOUNT|DEMO_PANE_ADMIN/);
+  assert.doesNotMatch(ui, /demo:admin/);
+
+  // The account region renders through the demo's guarded per-host render.
+  assert.match(app, /await demo\.renderPane\(els\.accountContent, view, \{/);
+  assert.match(ui, /async function renderPane\(host, view, \{ isCurrent = \(\) => true \} = \{\}\) \{/);
+
+  // Boot, Back/Forward and normalisation all reconcile the same way.
+  assert.match(app, /function reconcileRoute\(\)/);
+  assert.match(app, /window\.addEventListener\('popstate', onPopState\);/);
+  assert.match(app, /function onPopState\(\) \{[\s\S]{0,200}reconcileRoute\(\);/);
+
+  // A hidden reader is never measured, and a closed dialog cannot resume it.
+  assert.match(app, /tracker\?\.setPaused\(Boolean\(demo\?\.hasOpenDialog\(\)\) \|\| isAccountView\(state\.view\)\);/);
+  assert.match(app, /if \(isAccountView\(state\.view\)\) \{\n\s*tracker\?\.setActiveNote\(null\);/);
+
+  // The saved preference is applied before the chrome renders.
+  assert.match(app, /initAppearance\(\);\nboot\(\);\ninitDemo\(\);/);
+});
+
+test('the demo is additive: it decorates rendered notes and cannot block them', async () => {
   const app = await readFile('reader/public/app.js', 'utf8');
   const fillPane = app.slice(app.indexOf('async function fillPane'), app.indexOf('function applyNoteTitle'));
   const fillPreview = app.slice(app.indexOf('async function fillPreview'), app.indexOf('function showPreview'));
 
-  // Demo views are handled inside fillPane, ahead of getNote().
-  assert.ok(fillPane.indexOf('demoViewForPaneId(id)') !== -1);
-  assert.ok(fillPane.indexOf('demoViewForPaneId(id)') < fillPane.indexOf('await getNote(id)'));
   // The activity control is added once, after a successful render, never in a preview.
   assert.match(fillPane, /demo\?\.decorateArticle\(article, note\)/);
   assert.match(fillPane, /note\.source === 'vault'\) tracker\?\.markRendered\(id\)/);
+  assert.doesNotMatch(fillPane, /demoViewForPaneId|demo\.renderPane/);
   assert.doesNotMatch(fillPreview, /decorateArticle|log-activity/);
   assert.doesNotMatch(app, /note\.html[\s\S]{0,80}log-activity/);
 
-  // Reserved ids travel as ordinary pane ids, so Back, Forward, reload and
-  // project-subpath URLs keep working without new URL machinery.
-  assert.match(app, /isDemoPaneId\(id\) \|\| Boolean\(designUrlFromPaneId\(id\)\)/);
-  assert.match(app, /const demoLabel = demoPaneLabel\(id\);/);
-
   // The demo boots beside the reader and cannot block the notes.
-  assert.match(app, /boot\(\);\ninitDemo\(\);/);
   assert.match(app, /demo\.init\(\)\.then\(syncDemoSession\)\.catch\(\(\) => \{\}\);/);
 
   // A modal dialog owns the keyboard; reader shortcuts stand down.
@@ -140,9 +224,11 @@ test('the demo is additive: virtual panes resolve before any note request', asyn
   // Rebuilds release the demo's object URLs and clear measured pages.
   assert.match(app, /for \(const pane of state\.panes\) demo\?\.releasePane\(pane\);/);
   assert.match(app, /tracker\?\.clearRendered\(\);/);
+  // Returning to the notes revokes the account region's evidence URLs.
+  assert.match(app, /demo\?\.releasePane\(els\.accountContent\);/);
 });
 
-test('the header exposes exactly one User info entry and a dialog host', async () => {
+test('the header exposes exactly one User info entry, a dialog host and one account region', async () => {
   const html = await readFile('reader/public/index.html', 'utf8');
   assert.equal((html.match(/<button[^>]*user-info-button/g) ?? []).length, 1);
   assert.match(html, /id="user-info-button"/);
@@ -150,9 +236,18 @@ test('the header exposes exactly one User info entry and a dialog host', async (
   assert.match(html, /id="demo-dialog-host"/);
   // No new global navigation item was introduced for the admin view.
   assert.doesNotMatch(html, /id="admin-link"/);
+  assert.equal((html.match(/id="account"/g) ?? []).length, 1);
+  // Settings and the authorized Admin entry live inside the account region.
+  assert.match(html, /<nav class="account-nav" aria-label="Account views">/);
+  assert.match(html, /data-account-view="settings"[^>]*>Settings</);
+  assert.match(html, /data-account-view="admin"[^>]*hidden>Admin</);
+  assert.match(html, /data-account-back[^>]*>Return to notes</);
+  // The account region has no spine and no pane-close control.
+  const account = html.slice(html.indexOf('id="account"'), html.indexOf('id="preview"'));
+  assert.doesNotMatch(account, /pane-spine|pane-close|class="pane"/);
 });
 
-test('demo styling is namespaced and reuses the reader tokens', async () => {
+test('demo styling is namespaced, reuses the reader tokens and stays light', async () => {
   const css = await readFile('reader/public/styles.css', 'utf8');
   assert.match(css, /\.user-info-button \{/);
   assert.match(css, /\.note-content \.demo-row \{/);
@@ -160,4 +255,19 @@ test('demo styling is namespaced and reuses the reader tokens', async () => {
   const demoBlock = css.slice(css.indexOf('demo (local) ---'));
   assert.ok(demoBlock.length > 1000);
   assert.match(demoBlock, /var\(--surface-quiet\)/);
+
+  // Nothing outside the token blocks hard-codes a page colour any more. The
+  // old stylesheet had dark literals well past :root, so this is the assertion
+  // that keeps a theme change from being a root-only change.
+  const tokenEnd = css.indexOf('*,\n*::before');
+  assert.ok(tokenEnd > 0, 'the token blocks must come first');
+  const body = css.slice(tokenEnd);
+  assert.doesNotMatch(body, /#[0-9a-fA-F]{3,8}\b/, 'the stylesheet must use semantic tokens');
+  assert.doesNotMatch(body, /rgba\(/, 'the stylesheet must use semantic tokens');
+
+  // Exactly three presets: the default :root plus two overrides, all light.
+  assert.equal((css.match(/:root\[data-appearance=/g) ?? []).length, 2);
+  assert.match(css, /:root\[data-appearance="paper"\]/);
+  assert.match(css, /:root\[data-appearance="lilac"\]/);
+  assert.doesNotMatch(css, /prefers-color-scheme:\s*dark/);
 });

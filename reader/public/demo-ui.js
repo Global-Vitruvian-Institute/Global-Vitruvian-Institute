@@ -8,9 +8,9 @@
  *     an allow-listed image or handed over as a download whose blob type is
  *     deliberately `application/octet-stream`, so a copied blob URL cannot be
  *     rendered as HTML or SVG.
- *  2. The demo is a guest in the reader. It renders into an ordinary pane, it
- *     owns no global navigation, and every object URL it creates is revoked when
- *     the pane goes away.
+ *  2. The demo is a guest in the reader. It renders into the full-page account
+ *     region, it owns no global navigation, and every object URL it creates is
+ *     revoked when the region changes or the reader returns to the notes.
  */
 import {
   DEMO_ADMIN_EMAIL,
@@ -31,6 +31,7 @@ import {
   validateSubmissionInput,
   validateVerificationCode,
 } from './demo-model.js';
+import { APPEARANCES, appearanceLabel, currentAppearance, setAppearance } from './appearance.js';
 
 const EVIDENCE_ACCEPT = [
   ...['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'],
@@ -40,9 +41,9 @@ const EVIDENCE_ACCEPT = [
 let dialogCounter = 0;
 
 /**
- * A per-pane render generation. The stack's render token is shared by every
- * pane, so it cannot tell two overlapping loads of the *same* pane apart: this
- * adds the missing per-pane ordering, and binds each render to the session it
+ * A per-host render generation. The reader's region token is shared by every
+ * render, so it cannot tell two overlapping loads of the *same* host apart: this
+ * adds the missing per-host ordering, and binds each render to the session it
  * was started for. A render that is no longer current must not build, commit or
  * clean up after a newer one.
  */
@@ -136,7 +137,7 @@ function definitionList(rows) {
 export function createDemoUi({
   store,
   announce = () => {},
-  openPane = () => {},
+  openView = () => {},
   settleTracking = async () => {},
   beforeReset = null,
   afterReset = null,
@@ -150,7 +151,7 @@ export function createDemoUi({
   const changeListeners = new Set();
   const dialogListeners = new Set();
   const renderGuard = createPaneRenderGuard();
-  /** Object URLs for one render of a pane, revoked with that render. */
+  /** Object URLs for one render of the account region, revoked with that render. */
   const paneUrls = new WeakMap();
 
   async function init() {
@@ -205,7 +206,7 @@ export function createDemoUi({
   }
 
   /**
-   * Revoke a pane's object URLs. When `generation` is given, only that render's
+   * Revoke a host's object URLs. When `generation` is given, only that render's
    * URLs go: an older render finishing late must not revoke the evidence the
    * current view is showing.
    */
@@ -604,7 +605,7 @@ export function createDemoUi({
     return details;
   }
 
-  function buildSubmissionRow(pane, submission, evidence, events, { viewer, generation }) {
+  function buildSubmissionRow(article, submission, evidence, events, { viewer, generation }) {
     const item = el('li', 'demo-row');
     const head = el('div', 'demo-row-head');
     head.append(el('h3', 'demo-row-title', submission.noteTitle || submission.noteId));
@@ -623,7 +624,7 @@ export function createDemoUi({
     if (submission.reflection) item.append(el('p', 'demo-reflection', submission.reflection));
     else item.append(el('p', 'demo-caption', 'No written reflection. Evidence only.'));
 
-    item.append(buildEvidenceList(pane, evidence, generation));
+    item.append(buildEvidenceList(article, evidence, generation));
 
     if (submission.lastFeedback && submission.status === 'changes_requested') {
       item.append(el('p', 'demo-feedback', `Reviewer: ${submission.lastFeedback}`));
@@ -721,7 +722,7 @@ export function createDemoUi({
     return form;
   }
 
-  /* --------------------------------------------------------- pane: account --- */
+  /* ------------------------------------------------------ view: account --- */
 
   async function loadAccountData() {
     const submissions = session ? await store.listSubmissions({ accountId: session.id }) : [];
@@ -735,7 +736,7 @@ export function createDemoUi({
     return { submissions, evidence, events, stats };
   }
 
-  function buildAccountView(pane, data, generation) {
+  function buildAccountView(article, data, generation) {
     const fragment = document.createDocumentFragment();
     fragment.append(el('h1', 'demo-title', 'User info'));
 
@@ -757,7 +758,7 @@ export function createDemoUi({
       ? 'Synthetic demo participant, seeded in this browser.'
       : 'Local account in this browser.'));
 
-    // The portfolio and history are the point of this pane; the reading
+    // The portfolio and history are the point of this view; the reading
     // statistics are a secondary footnote below them.
     const pinned = data.submissions.filter((submission) => submission.pinned);
     const portfolio = section('Pinned portfolio');
@@ -789,7 +790,7 @@ export function createDemoUi({
       const list = el('ul', 'demo-list');
       for (const submission of data.submissions) {
         list.append(buildSubmissionRow(
-          pane,
+          article,
           submission,
           data.evidence.get(submission.id) ?? [],
           data.events.get(submission.id) ?? [],
@@ -831,7 +832,7 @@ export function createDemoUi({
 
     if (isAdminEmail(session.email)) {
       const admin = button('Admin page', 'demo-button');
-      admin.addEventListener('click', () => openPane('demo:admin'));
+      admin.addEventListener('click', () => openView('admin'));
       actions.append(admin);
     }
 
@@ -845,7 +846,63 @@ export function createDemoUi({
     return fragment;
   }
 
-  /* ----------------------------------------------------------- pane: admin --- */
+  /* -------------------------------------------------------- view: settings --- */
+
+  /**
+   * Appearance is a browser-local preference with no account behind it, so this
+   * view renders even when the demo store never opened. Choosing a preset
+   * always applies it; if the browser refuses to remember it, the view says so
+   * instead of pretending.
+   */
+  function buildSettingsView() {
+    const fragment = document.createDocumentFragment();
+    fragment.append(el('h1', 'demo-title', 'Settings'));
+    fragment.append(el('p', 'demo-lede',
+      'A few appearance choices for this browser. Nothing here is sent anywhere, and no account is needed.'));
+
+    const appearance = section('Appearance');
+    const field = el('div', 'demo-field');
+    const label = el('label', 'demo-label', 'Colour preset');
+    label.htmlFor = 'demo-appearance';
+
+    const select = document.createElement('select');
+    select.id = 'demo-appearance';
+    select.className = 'demo-control demo-select';
+    for (const preset of APPEARANCES) {
+      const option = el('option', '', preset.label);
+      option.value = preset.id;
+      if (preset.id === currentAppearance()) option.selected = true;
+      select.append(option);
+    }
+
+    const hint = el('p', 'demo-hint');
+    const describe = (id) => {
+      const preset = APPEARANCES.find((entry) => entry.id === id);
+      return preset ? preset.description : '';
+    };
+    hint.textContent = describe(currentAppearance());
+    select.setAttribute('aria-describedby', 'demo-appearance-hint');
+    hint.id = 'demo-appearance-hint';
+
+    select.addEventListener('change', () => {
+      const { id, stored } = setAppearance(select.value);
+      hint.textContent = describe(id);
+      announce(stored
+        ? `Appearance set to ${appearanceLabel(id)}.`
+        : 'That appearance applies to this visit; this browser would not store the preference.');
+    });
+
+    field.append(label, select, hint);
+    appearance.append(field);
+    appearance.append(el('p', 'demo-caption',
+      'Presets change colour only. The reader stays light either way: there is no dark mode and no automatic switch.'));
+    fragment.append(appearance);
+
+    fragment.append(el('p', 'demo-note', DEMO_DISCLOSURE));
+    return fragment;
+  }
+
+  /* --------------------------------------------------------- view: admin --- */
 
   async function loadAdminData() {
     const [accounts, submissions, stats] = await Promise.all([
@@ -864,7 +921,7 @@ export function createDemoUi({
     return { accounts, submissions, byEmail, evidence, events, statsByAccount };
   }
 
-  function buildAdminView(pane, data, generation) {
+  function buildAdminView(article, data, generation) {
     const fragment = document.createDocumentFragment();
     fragment.append(el('h1', 'demo-title', 'Admin'));
     fragment.append(el('p', 'demo-lede',
@@ -910,7 +967,7 @@ export function createDemoUi({
       const list = el('ul', 'demo-list');
       for (const submission of data.submissions) {
         list.append(buildSubmissionRow(
-          pane,
+          article,
           { ...submission, authorEmail: data.byEmail.get(submission.accountId) ?? submission.accountId },
           data.evidence.get(submission.id) ?? [],
           data.events.get(submission.id) ?? [],
@@ -925,7 +982,16 @@ export function createDemoUi({
     return fragment;
   }
 
-  /* ----------------------------------------------------------------- pane --- */
+  /* ----------------------------------------------------------- rendering --- */
+
+  /* ------------------------------------------------------- the account view --- */
+
+  /** The account-region content element, however the caller hands it over. */
+  function contentHost(host) {
+    if (!host) return null;
+    if (host.classList?.contains('note-content')) return host;
+    return host.querySelector?.('.note-content') ?? null;
+  }
 
   function failureBlock(error) {
     const wrap = el('div', 'demo-failure');
@@ -939,46 +1005,63 @@ export function createDemoUi({
   }
 
   /**
-   * Renders a demo pane. `isCurrent` is the reader's stack render token; the
-   * per-pane generation and the captured session identity are rechecked after
-   * every await, so a slow load cannot commit over a newer one or over a
-   * session that changed while it was in flight.
+   * Renders one account region into its host element.
+   *
+   * The host is the full-page account content, not a reader pane, and it stays
+   * connected while the reader is showing, so `isConnected` cannot be the guard:
+   * `isCurrent` is the caller's region token, and the per-host render generation
+   * plus the captured session identity are rechecked after every await. A render
+   * that is no longer current must not build, commit or clean up after a newer
+   * one.
+   *
+   * Returns whether this render committed, so the caller only moves focus for
+   * the view that is actually on screen.
    */
-  async function renderPane(pane, view, { isCurrent = () => true } = {}) {
-    const article = pane.querySelector('.note-content');
-    if (!article) return;
-    const { generation, isCurrent: isCurrentGeneration } = renderGuard.begin(pane, session?.id ?? null);
+  async function renderPane(host, view, { isCurrent = () => true } = {}) {
+    const article = contentHost(host);
+    if (!article) return false;
+    const { generation, isCurrent: isCurrentGeneration } = renderGuard.begin(article, session?.id ?? null);
     const stillCurrent = () => isCurrentGeneration(session?.id ?? null) && isCurrent();
 
-    revokePaneUrls(pane);
+    revokePaneUrls(article);
     article.replaceChildren();
 
     await init();
-    if (!stillCurrent()) return;
+    if (!stillCurrent()) return false;
+
+    // Appearance is a browser-local preference with no account behind it, so
+    // Settings renders even when the demo store never opened.
+    if (view === 'settings') {
+      article.replaceChildren(buildSettingsView());
+      return true;
+    }
+
     if (!ready) {
       article.append(failureBlock(failure));
-      return;
+      return true;
     }
 
     try {
       // Settle measured reading time first: the statistics below must include
       // the stretch the reader just finished, however short it was.
       await settleTracking();
-      if (!stillCurrent()) return;
+      if (!stillCurrent()) return false;
       const data = view === 'admin' ? await loadAdminData() : await loadAccountData();
       if (!stillCurrent()) {
-        revokePaneUrls(pane, generation);
-        return;
+        revokePaneUrls(article, generation);
+        return false;
       }
       const fragment = view === 'admin'
-        ? buildAdminView(pane, data, generation)
-        : buildAccountView(pane, data, generation);
+        ? buildAdminView(article, data, generation)
+        : buildAccountView(article, data, generation);
       article.replaceChildren(fragment);
+      return true;
     } catch (error) {
       // Only this render's object URLs go: a newer view may already be showing.
-      revokePaneUrls(pane, generation);
-      if (!stillCurrent()) return;
+      revokePaneUrls(article, generation);
+      if (!stillCurrent()) return false;
       article.replaceChildren(failureBlock(error));
+      return true;
     }
   }
 
@@ -1000,8 +1083,8 @@ export function createDemoUi({
     article.append(wrap);
   }
 
-  function releasePane(pane) {
-    revokePaneUrls(pane);
+  function releasePane(host) {
+    revokePaneUrls(contentHost(host) ?? host);
   }
 
   return {

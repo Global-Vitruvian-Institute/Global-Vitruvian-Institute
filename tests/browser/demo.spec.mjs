@@ -7,6 +7,10 @@
  * The suite builds `dist/`, serves it over HTTP (also under a project prefix, to
  * stand in for GitHub Pages), and drives it with Playwright. Each test gets a
  * fresh browser context, so every test starts with an empty IndexedDB.
+ *
+ * The account views (User info, Settings, Admin) are a full-page region beside
+ * the reader, not panes in the stack, so they are addressed through
+ * `#account` / `#account-content` rather than `lastPane()`.
  */
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,6 +40,8 @@ const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
   'base64',
 );
+
+const ACCOUNT_TITLES = { account: 'User info', settings: 'Settings', admin: 'Admin' };
 
 if (!playwright) {
   test('browser tests need Playwright', { skip: 'Playwright was not found; set PLAYWRIGHT_MODULE to playwright/index.mjs' }, () => {});
@@ -90,12 +96,19 @@ after(async () => {
 /* ---------------------------------------------------------------- helpers --- */
 
 /** A fresh, isolated context: its own IndexedDB, cookies and storage. */
-async function openPage({ viewport = config.viewport, url = '/', initScript = null, reducedMotion = null } = {}) {
+async function openPage({
+  viewport = config.viewport,
+  url = '/',
+  initScript = null,
+  reducedMotion = null,
+  colorScheme = null,
+} = {}) {
   const context = await browser.newContext({
     viewport,
     baseURL: baseUrlFor(),
     hasTouch: false,
     ...(reducedMotion ? { reducedMotion } : {}),
+    ...(colorScheme ? { colorScheme } : {}),
   });
   if (initScript) await context.addInitScript(initScript);
   const page = await context.newPage();
@@ -112,7 +125,15 @@ async function openPage({ viewport = config.viewport, url = '/', initScript = nu
   return { context, page, errors };
 }
 
+const stack = (page) => page.locator('#stack');
 const lastPane = (page) => page.locator('.stack > .pane').last();
+/** The full-page account region and its content, never a `.pane`. */
+const accountRegion = (page) => page.locator('#account');
+const accountBody = (page) => page.locator('#account-content');
+const paneCount = (page) => page.locator('.stack > .pane').count();
+
+const currentView = (page) =>
+  page.evaluate(() => new URL(location.href).searchParams.get('view') ?? 'reader');
 
 async function waitForNote(page, title = null) {
   await page.waitForFunction((expected) => {
@@ -124,7 +145,34 @@ async function waitForNote(page, title = null) {
   }, title);
 }
 
-/** The account pane and the sign-in dialog share one form; this fills either. */
+/** Wait for the account region, and for the named view's heading. */
+async function waitForAccountView(page, view = 'account') {
+  await accountRegion(page).waitFor();
+  await page.waitForFunction((expected) => {
+    const heading = document.querySelector('#account-content h1');
+    return Boolean(heading) && heading.textContent.trim() === expected;
+  }, ACCOUNT_TITLES[view] ?? view);
+  return accountBody(page);
+}
+
+/** Open an account view through the header entry and the region's own nav. */
+async function goToView(page, view = 'account') {
+  if (!(await accountRegion(page).isVisible())) {
+    await page.click('#user-info-button');
+    await accountRegion(page).waitFor();
+  }
+  // Only click when the region actually has to change: the header entry already
+  // lands on User info.
+  if ((await currentView(page)) !== view) {
+    await page.locator(`#account [data-account-view="${view}"]`).click();
+  }
+  await page.waitForFunction((expected) => {
+    return (new URL(location.href).searchParams.get('view') ?? 'reader') === expected;
+  }, view);
+  return waitForAccountView(page, view);
+}
+
+/** The account view and the sign-in dialog share one form; this fills either. */
 async function completeSignIn(scope, email) {
   await scope.locator('input[type="email"]').fill(email);
   await scope.getByRole('button', { name: 'Continue' }).click();
@@ -133,13 +181,12 @@ async function completeSignIn(scope, email) {
   await scope.getByRole('button', { name: 'Sign in' }).click();
 }
 
-async function signInFromAccountPane(page, email) {
-  await page.click('#user-info-button');
-  const pane = lastPane(page);
-  await pane.locator('.demo-signin').waitFor();
-  await completeSignIn(pane, email);
-  await pane.locator('.demo-facts').waitFor();
-  return pane;
+async function signInFromAccount(page, email) {
+  const body = await goToView(page, 'account');
+  await body.locator('.demo-signin').waitFor();
+  await completeSignIn(body, email);
+  await body.locator('.demo-facts').waitFor();
+  return body;
 }
 
 async function openActivityDialog(page) {
@@ -157,56 +204,122 @@ async function logActivity(page, { reflection = '', files = [] } = {}) {
   return dialog;
 }
 
+/** Read the demo's own IndexedDB, so statistics can be asserted exactly. */
+async function readDemoData(page) {
+  return page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('vitruvian-demo');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const readAll = (store) => new Promise((resolve, reject) => {
+      const request = db.transaction(store, 'readonly').objectStore(store).getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const [accounts, stats] = await Promise.all([readAll('accounts'), readAll('stats')]);
+    db.close();
+    return { accounts, stats };
+  });
+}
+
+async function statsFor(page, email) {
+  const { accounts, stats } = await readDemoData(page);
+  const account = accounts.find((record) => record.email === email);
+  assert.ok(account, `the local account ${email} must exist`);
+  return stats.find((record) => record.accountId === account.id) ?? { pages: {}, activeMs: 0 };
+}
+
 /* ------------------------------------------------------------------ tests --- */
 
-test('sign in with the on-screen code; the account view states the demo limits', { skip: !playwright }, async () => {
+test('User info is a full-page account region, not a pane in the stack', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage();
   try {
     await waitForNote(page);
+    assert.equal(await paneCount(page), 1);
+
     await page.click('#user-info-button');
-    const pane = lastPane(page);
-    await pane.locator('h1.demo-title').waitFor();
-    assert.equal((await pane.locator('h1.demo-title').textContent()).trim(), 'User info');
-    // The view is a reserved pane id in the ordinary URL, not a Markdown note.
-    assert.equal(await pane.getAttribute('aria-label'), 'User info');
-    assert.match(page.url(), /(?:note|stackedNotes)=demo%3Aaccount/);
-    assert.match(await pane.textContent(), /Insecure local-only demo/);
-    assert.match(await pane.textContent(), /no server, no real authentication and no email/);
+    const body = await waitForAccountView(page, 'account');
 
-    await pane.locator('input[type="email"]').fill('not-an-email');
-    await pane.getByRole('button', { name: 'Continue' }).click();
-    assert.match(await pane.locator('.demo-error:visible').textContent(), /does not look like an email/);
+    // The region is exposed; the reading stack is hidden but still mounted.
+    assert.equal(await accountRegion(page).isVisible(), true);
+    assert.equal(await stack(page).isVisible(), false);
+    assert.equal(await paneCount(page), 1, 'the note pane is kept, not replaced');
+    assert.equal(await page.locator('#account .pane').count(), 0, 'an account view is never a pane');
+    assert.equal(await page.locator('.pane[data-note-id^="demo:"]').count(), 0);
 
-    await pane.locator('input[type="email"]').fill('Ada@Example.com');
-    await pane.getByRole('button', { name: 'Continue' }).click();
-    // The code is on screen because there is no email delivery.
-    assert.equal((await pane.locator('.demo-code-value').textContent()).trim(), DEMO_VERIFICATION_CODE);
+    // The reading query parameters survive; `view` is the only addition.
+    assert.equal(await currentView(page), 'account');
+    assert.match(page.url(), /note=Base(%20|\+)Note/);
+    assert.equal((await body.locator('h1.demo-title').textContent()).trim(), 'User info');
+    assert.match(await body.textContent(), /Insecure local-only demo/);
+    assert.match(await body.textContent(), /no server, no real authentication and no email/);
 
-    await pane.locator('input[type="text"]').fill('000000');
-    await pane.getByRole('button', { name: 'Sign in' }).click();
-    assert.match(await pane.locator('.demo-error:visible').textContent(), /does not match/);
-
-    await pane.locator('input[type="text"]').fill(DEMO_VERIFICATION_CODE);
-    await pane.getByRole('button', { name: 'Sign in' }).click();
-    await pane.locator('.demo-facts').waitFor();
-
-    assert.match(await pane.textContent(), /Signed in as ada@example\.com/);
-    assert.match(await pane.textContent(), /Local estimate, measured in this browser only/);
-    // Short empty states, and no promotional calls to action.
-    assert.match(await pane.textContent(), /Nothing pinned yet\./);
-    assert.match(await pane.textContent(), /No activity logged yet\./);
-    assert.equal(await pane.locator('a.demo-evidence-download').count(), 0);
-
-    // The admin page is not a global navigation item.
+    // Settings and Admin live inside the region, never in global navigation.
     assert.equal(await page.locator('header button', { hasText: 'Admin' }).count(), 0);
-    assert.equal(await pane.getByRole('button', { name: 'Admin page' }).count(), 0);
+    assert.equal(await page.locator('header a', { hasText: 'Settings' }).count(), 0);
+    assert.equal(await page.locator('#account [data-account-view="settings"]').count(), 1);
+    assert.equal(await page.locator('#account [data-account-view="admin"]').isVisible(), false,
+      'the admin entry is hidden until an admin is signed in');
 
-    // The account pane closes and comes back through history like any other.
-    await page.locator('.pane-close').last().click();
-    await page.waitForFunction(() => document.querySelectorAll('.stack > .pane').length === 1);
-    await page.goBack();
-    await lastPane(page).locator('h1.demo-title').waitFor();
-    assert.match(page.url(), /(?:note|stackedNotes)=demo%3Aaccount/);
+    // Signing in states the demo limits and keeps the reader working.
+    await body.locator('input[type="email"]').fill('not-an-email');
+    await body.getByRole('button', { name: 'Continue' }).click();
+    assert.match(await body.locator('.demo-error:visible').textContent(), /does not look like an email/);
+
+    await body.locator('input[type="email"]').fill('Ada@Example.com');
+    await body.getByRole('button', { name: 'Continue' }).click();
+    // The code is on screen because there is no email delivery.
+    assert.equal((await body.locator('.demo-code-value').textContent()).trim(), DEMO_VERIFICATION_CODE);
+
+    await body.locator('input[type="text"]').fill('000000');
+    await body.getByRole('button', { name: 'Sign in' }).click();
+    assert.match(await body.locator('.demo-error:visible').textContent(), /does not match/);
+
+    await body.locator('input[type="text"]').fill(DEMO_VERIFICATION_CODE);
+    await body.getByRole('button', { name: 'Sign in' }).click();
+    await body.locator('.demo-facts').waitFor();
+
+    assert.match(await body.textContent(), /Signed in as ada@example\.com/);
+    assert.match(await body.textContent(), /Local estimate, measured in this browser only/);
+    assert.match(await body.textContent(), /Nothing pinned yet\./);
+    assert.match(await body.textContent(), /No activity logged yet\./);
+    assert.equal(await body.locator('a.demo-evidence-download').count(), 0);
+    assert.equal(await paneCount(page), 1, 'signing in adds no pane');
+
+    // Visiting every region leaves the reading stack exactly as it was: an
+    // account view never enters `state.stack` and never renders as a pane.
+    await goToView(page, 'settings');
+    assert.equal(await paneCount(page), 1);
+    assert.equal(await lastPane(page).getAttribute('data-note-id'), 'Base Note');
+    assert.match(page.url(), /note=Base(%20|\+)Note/);
+    assert.equal(await page.locator('.pane[data-note-id^="demo:"]').count(), 0);
+    await goToView(page, 'account');
+    assert.equal(await paneCount(page), 1);
+    assert.equal(await lastPane(page).getAttribute('data-note-id'), 'Base Note');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Settings offers the appearance presets with no account at all', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  try {
+    await waitForNote(page);
+    const body = await goToView(page, 'settings');
+    assert.equal((await body.locator('h1.demo-title').textContent()).trim(), 'Settings');
+    assert.equal(await body.locator('.demo-signin').count(), 0, 'Settings needs no session');
+
+    const select = body.locator('#demo-appearance');
+    await select.waitFor();
+    assert.deepEqual(await select.locator('option').allTextContents(), ['Clear', 'Paper', 'Soft Lilac']);
+    assert.equal(await select.inputValue(), 'clear');
+    assert.equal(await select.evaluate((element) => element.tagName), 'SELECT');
+    // The control is labelled, and its hint is associated.
+    assert.equal(await body.locator('label[for="demo-appearance"]').count(), 1);
+    assert.equal(await select.getAttribute('aria-describedby'), 'demo-appearance-hint');
+    assert.equal(await body.locator('#demo-appearance-hint').count(), 1);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -243,13 +356,13 @@ test('logging an activity needs a reflection or a file, and lands as pending', {
     await dialog.waitFor({ state: 'detached' });
     assert.match(await page.locator('#status').textContent(), /Activity logged and saved as pending review/);
 
-    await page.click('#user-info-button');
-    const pane = lastPane(page);
-    await pane.locator('.demo-row').waitFor();
-    assert.equal(await pane.locator('.demo-row').count(), 1);
-    assert.equal((await pane.locator('.demo-status').first().textContent()).trim(), 'Pending');
-    assert.match(await pane.textContent(), /Two slow breaths before the first meeting\./);
-    assert.match(await pane.textContent(), /No review yet\./);
+    const body = await goToView(page, 'account');
+    await body.locator('.demo-row').waitFor();
+    assert.equal(await body.locator('.demo-row').count(), 1);
+    assert.equal((await body.locator('.demo-status').first().textContent()).trim(), 'Pending');
+    assert.match(await body.textContent(), /Two slow breaths before the first meeting\./);
+    assert.match(await body.textContent(), /No review yet\./);
+    assert.equal(await paneCount(page), 1);
 
     // A note without `activity: true` never grows the control.
     await page.goto('/?note=Base Note');
@@ -278,26 +391,25 @@ test('evidence: images preview, other files download, uploaded markup never runs
     await dialog.getByRole('button', { name: 'Save as pending' }).click();
     await dialog.waitFor({ state: 'detached' });
 
-    await page.click('#user-info-button');
-    const pane = lastPane(page);
-    await pane.locator('.demo-evidence-image').waitFor();
+    const body = await goToView(page, 'account');
+    await body.locator('.demo-evidence-image').waitFor();
 
-    const preview = pane.locator('.demo-evidence-image');
+    const preview = body.locator('.demo-evidence-image');
     assert.match(await preview.getAttribute('src'), /^blob:/);
-    assert.equal(await pane.locator('.demo-evidence').count(), 1);
+    assert.equal(await body.locator('.demo-evidence').count(), 1);
 
-    const download = pane.locator('a.demo-evidence-download');
+    const download = body.locator('a.demo-evidence-download');
     assert.equal(await download.count(), 1);
     assert.match(await download.textContent(), /Download payload\.html/);
     assert.equal(await download.getAttribute('download'), 'payload.html');
     assert.match(await download.getAttribute('href'), /^blob:/);
-    assert.equal(await pane.locator('iframe').count(), 0, 'evidence is never framed');
+    assert.equal(await body.locator('iframe').count(), 0, 'evidence is never framed');
     assert.equal(await page.evaluate(() => window.__pwned ?? null), null, 'uploaded markup never ran');
 
-    // Leaving the pane revokes the object URLs it created, so they cannot be
+    // Leaving the region revokes the object URLs it created, so they cannot be
     // reused after the evidence is off screen.
     const previewSrc = await preview.getAttribute('src');
-    await page.click('#app-title');
+    await page.locator('#account-back').click();
     await waitForNote(page);
     const revoked = await page.evaluate(async (url) => {
       try {
@@ -307,7 +419,7 @@ test('evidence: images preview, other files download, uploaded markup never runs
         return true;
       }
     }, previewSrc);
-    assert.equal(revoked, true, 'the evidence object URL must be revoked with its pane');
+    assert.equal(revoked, true, 'the evidence object URL must be revoked with its view');
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -318,14 +430,15 @@ test('the admin page reviews seeded participants and keeps a history', { skip: !
   const { context, page, errors } = await openPage();
   try {
     await waitForNote(page);
-    const pane = await signInFromAccountPane(page, 'admin@vitruvian.demo');
-    // The demo admin is an ordinary local account, and only it sees the link.
-    assert.match(await pane.textContent(), /Local account in this browser/);
-    await pane.getByRole('button', { name: 'Admin page' }).click();
+    const account = await signInFromAccount(page, 'admin@vitruvian.demo');
+    // The demo admin is an ordinary local account, and only it sees the entry.
+    assert.match(await account.textContent(), /Local account in this browser/);
+    assert.equal(await page.locator('#account [data-account-view="admin"]').isVisible(), true);
+    await page.locator('#account [data-account-view="admin"]').click();
 
-    const admin = lastPane(page);
-    await admin.locator('h1.demo-title').waitFor();
+    const admin = await waitForAccountView(page, 'admin');
     assert.equal((await admin.locator('h1.demo-title').textContent()).trim(), 'Admin');
+    assert.equal(await currentView(page), 'admin');
     assert.match(await admin.textContent(), /Local-only demo admin/);
     assert.match(await admin.textContent(), /Synthetic sample statistics/);
     assert.equal(await admin.locator('.demo-row').filter({ hasText: 'Ada — synthetic participant' }).count(), 1);
@@ -370,36 +483,34 @@ test('a pinned portfolio and its history survive a reload, and accounts stay sep
     await dialog.getByRole('button', { name: 'Save as pending' }).click();
     await dialog.waitFor({ state: 'detached' });
 
-    await page.click('#user-info-button');
-    let pane = lastPane(page);
-    await pane.locator('.demo-row').waitFor();
-    assert.equal(await pane.locator('.demo-gallery-card').count(), 0);
+    let body = await goToView(page, 'account');
+    await body.locator('.demo-row').waitFor();
+    assert.equal(await body.locator('.demo-gallery-card').count(), 0);
 
     // Pin it, whatever its review status.
-    const pin = pane.getByRole('button', { name: /^Pin the/ });
+    const pin = body.getByRole('button', { name: /^Pin the/ });
     await pin.click();
-    await pane.locator('.demo-gallery-card').waitFor();
-    assert.equal(await pane.locator('.demo-gallery-card').count(), 1);
-    assert.match(await pane.locator('.demo-gallery-card').textContent(), /Wrote three lines/);
+    await body.locator('.demo-gallery-card').waitFor();
+    assert.equal(await body.locator('.demo-gallery-card').count(), 1);
+    assert.match(await body.locator('.demo-gallery-card').textContent(), /Wrote three lines/);
     // The pinned item is still in the history.
-    assert.equal(await pane.locator('.demo-row').count(), 1);
+    assert.equal(await body.locator('.demo-row').count(), 1);
 
     await page.reload();
-    await page.click('#user-info-button');
-    pane = lastPane(page);
-    await pane.locator('.demo-gallery-card').waitFor();
-    assert.match(await pane.textContent(), /Signed in as owner@example\.com/);
-    assert.equal(await pane.locator('.demo-gallery-card').count(), 1);
-    assert.equal((await pane.locator('.demo-fact-value').nth(1).textContent()).trim(), '1');
+    body = await goToView(page, 'account');
+    await body.locator('.demo-gallery-card').waitFor();
+    assert.match(await body.textContent(), /Signed in as owner@example\.com/);
+    assert.equal(await body.locator('.demo-gallery-card').count(), 1);
+    assert.equal((await body.locator('.demo-fact-value').nth(1).textContent()).trim(), '1');
 
     // Account switching: another address sees nothing of the first account.
-    await pane.getByRole('button', { name: 'Sign out' }).click();
-    await pane.locator('.demo-signin').waitFor();
-    await completeSignIn(pane, 'someone-else@example.com');
-    await pane.locator('.demo-facts').waitFor();
-    assert.match(await pane.textContent(), /Signed in as someone-else@example\.com/);
-    assert.match(await pane.textContent(), /Nothing pinned yet\./);
-    assert.match(await pane.textContent(), /No activity logged yet\./);
+    await body.getByRole('button', { name: 'Sign out' }).click();
+    await body.locator('.demo-signin').waitFor();
+    await completeSignIn(body, 'someone-else@example.com');
+    await body.locator('.demo-facts').waitFor();
+    assert.match(await body.textContent(), /Signed in as someone-else@example\.com/);
+    assert.match(await body.textContent(), /Nothing pinned yet\./);
+    assert.match(await body.textContent(), /No activity logged yet\./);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -419,27 +530,26 @@ test('clearing local data asks for confirmation and restores the fixtures', { sk
     await activity.getByRole('button', { name: 'Save as pending' }).click();
     await activity.waitFor({ state: 'detached' });
 
-    await page.click('#user-info-button');
-    const pane = lastPane(page);
-    await pane.getByRole('button', { name: 'Clear local demo data' }).click();
+    const body = await goToView(page, 'account');
+    await body.getByRole('button', { name: 'Clear local demo data' }).click();
     const confirm = page.locator('dialog.demo-dialog-confirm');
     await confirm.waitFor();
     await confirm.getByRole('button', { name: 'Cancel' }).click();
     await confirm.waitFor({ state: 'detached' });
-    assert.equal(await pane.locator('.demo-row').count(), 1, 'cancel keeps the data');
+    assert.equal(await body.locator('.demo-row').count(), 1, 'cancel keeps the data');
 
-    await pane.getByRole('button', { name: 'Clear local demo data' }).click();
+    await body.getByRole('button', { name: 'Clear local demo data' }).click();
     await page.locator('dialog.demo-dialog-confirm').getByRole('button', { name: 'Clear local data' }).click();
     await page.locator('dialog.demo-dialog-confirm').waitFor({ state: 'detached' });
     // Clearing also ends the local session, so the sign-in form comes back.
-    await pane.locator('.demo-signin').waitFor();
+    await body.locator('.demo-signin').waitFor();
     assert.match(await page.locator('#status').textContent(), /Local demo data cleared/);
     assert.match(await page.locator('#status').textContent(), /Synthetic fixtures restored/);
     // The account really is gone: signing in again starts from nothing.
-    await completeSignIn(pane, 'temp@example.com');
-    await pane.locator('.demo-facts').waitFor();
-    assert.match(await pane.textContent(), /No activity logged yet\./);
-    assert.match(await pane.textContent(), /Nothing pinned yet\./);
+    await completeSignIn(body, 'temp@example.com');
+    await body.locator('.demo-facts').waitFor();
+    assert.match(await body.textContent(), /No activity logged yet\./);
+    assert.match(await body.textContent(), /Nothing pinned yet\./);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -500,10 +610,17 @@ test('storage that is missing or full never stops the notes, and never loses inp
   try {
     await waitForNote(missing.page);
     await missing.page.click('#user-info-button');
-    const pane = lastPane(missing.page);
-    await pane.locator('.demo-failure').waitFor();
-    assert.match(await pane.textContent(), /User info is unavailable/);
-    assert.match(await pane.textContent(), /The notes themselves are unaffected\./);
+    const body = accountBody(missing.page);
+    await body.locator('.demo-failure').waitFor();
+    assert.match(await body.textContent(), /User info is unavailable/);
+    assert.match(await body.textContent(), /The notes themselves are unaffected\./);
+
+    // Settings does not depend on the store, so it still works here.
+    await missing.page.locator('#account [data-account-view="settings"]').click();
+    await missing.page.waitForFunction(() =>
+      document.querySelector('#account-content h1')?.textContent.trim() === 'Settings');
+    await missing.page.locator('#account-content #demo-appearance').waitFor();
+
     // Notes keep working.
     await missing.page.click('#app-title');
     await waitForNote(missing.page);
@@ -548,12 +665,11 @@ test('reading statistics count distinct notes for the signed-in reader only', { 
   try {
     await waitForNote(page);
     // Signed out: nothing is measured, and the account view says so.
-    await page.click('#user-info-button');
-    let pane = lastPane(page);
-    await pane.locator('.demo-signin').waitFor();
-    await completeSignIn(pane, 'measured@example.com');
-    await pane.locator('.demo-facts').waitFor();
-    assert.equal((await pane.locator('.demo-fact-value').nth(1).textContent()).trim(), '0');
+    let body = await goToView(page, 'account');
+    await body.locator('.demo-signin').waitFor();
+    await completeSignIn(body, 'measured@example.com');
+    await body.locator('.demo-facts').waitFor();
+    assert.equal((await body.locator('.demo-fact-value').nth(1).textContent()).trim(), '0');
 
     // Two distinct notes, opened the way a reader would.
     await page.click('#app-title');
@@ -561,204 +677,342 @@ test('reading statistics count distinct notes for the signed-in reader only', { 
     await page.locator('#search-input').fill('Movement');
     await page.locator('.search-result').first().click();
     await waitForNote(page, 'Movement');
-    // Let the view write land before the account pane reads the statistics.
+    // Let the view write land before the account view reads the statistics.
     await page.waitForTimeout(200);
 
-    // A preview is not a page, and neither is a demo pane.
-    await page.click('#user-info-button');
-    pane = lastPane(page);
-    await pane.locator('.demo-facts').waitFor();
-    assert.equal((await pane.locator('.demo-fact-value').nth(1).textContent()).trim(), '2');
-    assert.match(await pane.locator('.demo-fact-value').first().textContent(), /^\d+[smh]/);
-    assert.match(await pane.textContent(), /Local estimate, measured in this browser only/);
+    // A preview is not a page, and neither is an account view.
+    body = await goToView(page, 'account');
+    await body.locator('.demo-facts').waitFor();
+    assert.equal((await body.locator('.demo-fact-value').nth(1).textContent()).trim(), '2');
+    assert.match(await body.locator('.demo-fact-value').first().textContent(), /^\d+[smh]/);
+    assert.match(await body.textContent(), /Local estimate, measured in this browser only/);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
   }
 });
 
-test('on a phone, User info brings an open account pane back in front of Admin', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage({ viewport: config.mobileViewport, url: '/?note=Breath' });
-  try {
-    await waitForNote(page, 'Breath');
-    await page.click('#user-info-button');
-    const pane = lastPane(page);
-    await pane.locator('.demo-signin').waitFor();
-    await completeSignIn(pane, 'admin@vitruvian.demo');
-    await pane.locator('.demo-facts').waitFor();
-    await pane.getByRole('button', { name: 'Admin page' }).click();
-
-    // Admin is rightmost, so on this width the account pane is open but hidden.
-    await lastPane(page).locator('h1.demo-title').waitFor();
-    assert.equal((await lastPane(page).locator('h1.demo-title').textContent()).trim(), 'Admin');
-    assert.equal(await page.locator('.stack > .pane').count(), 3);
-
-    // The header entry brings User info back in front through the stack URL.
-    await page.click('#user-info-button');
-    await lastPane(page).locator('h1.demo-title').waitFor();
-    assert.equal((await lastPane(page).locator('h1.demo-title').textContent()).trim(), 'User info');
-    assert.match(page.url(), /stackedNotes=demo%3Aaccount$/);
-    assert.equal(await page.locator('.stack > .pane').count(), 3);
-
-    // Back and Forward still describe the order that was on screen.
-    await page.goBack();
-    await page.waitForFunction(() =>
-      document.querySelector('.stack > .pane:last-child h1.demo-title')?.textContent.trim() === 'Admin');
-    await page.goForward();
-    await page.waitForFunction(() =>
-      document.querySelector('.stack > .pane:last-child h1.demo-title')?.textContent.trim() === 'User info');
-    assert.deepEqual(errors, []);
-  } finally {
-    await context.close();
-  }
-});
-
-test('clearing local data discards pending reading time and leaves no orphan statistics', { skip: !playwright }, async () => {
+test('account views accrue no reading time or pages, and a closed dialog cannot resume tracking', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage({ url: '/?note=Breath' });
   try {
     await waitForNote(page, 'Breath');
-    await page.click('#user-info-button');
-    let pane = lastPane(page);
-    await pane.locator('.demo-signin').waitFor();
-    await completeSignIn(pane, 'orphan@example.com');
-    await pane.locator('.demo-facts').waitFor();
+    const body = await signInFromAccount(page, 'quiet@example.com');
+    // The account view settles the tracker before it reads the statistics.
+    const before = await statsFor(page, 'quiet@example.com');
+    assert.ok(before.activeMs >= 0);
 
-    // Read a real note for a few seconds: below the 20s flush threshold.
-    await page.click('#app-title');
-    await waitForNote(page);
-    await page.waitForTimeout(3_000);
-
-    // Clear everything, including that unflushed stretch.
-    await page.click('#user-info-button');
-    pane = lastPane(page);
-    await pane.locator('.demo-facts').waitFor();
-    await pane.getByRole('button', { name: 'Clear local demo data' }).click();
-    await page.locator('dialog.demo-dialog-confirm').getByRole('button', { name: 'Clear local data' }).click();
+    // Stay on the account page, including through a dialog open and close: the
+    // reader is hidden, so nothing may accrue and no page may be counted.
+    await page.waitForTimeout(1_200);
+    await body.getByRole('button', { name: 'Clear local demo data' }).click();
+    await page.locator('dialog.demo-dialog-confirm').waitFor();
+    await page.waitForTimeout(1_200);
+    await page.locator('dialog.demo-dialog-confirm').getByRole('button', { name: 'Cancel' }).click();
     await page.locator('dialog.demo-dialog-confirm').waitFor({ state: 'detached' });
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(2_000);
 
-    const stored = await page.evaluate(async () => {
-      const db = await new Promise((resolve, reject) => {
-        const request = indexedDB.open('vitruvian-demo');
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      const readAll = (store) => new Promise((resolve, reject) => {
-        const request = db.transaction(store, 'readonly').objectStore(store).getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      const [accounts, stats] = await Promise.all([readAll('accounts'), readAll('stats')]);
-      db.close();
-      return { accounts, stats };
-    });
-
-    assert.equal(stored.accounts.some((account) => account.email === 'orphan@example.com'), false);
-    const accountIds = new Set(stored.accounts.map((account) => account.id));
-    assert.ok(stored.stats.every((record) => accountIds.has(record.accountId)),
-      'no statistics row may outlive the account it belongs to');
-    assert.ok(stored.stats.every((record) => record.synthetic === true));
+    const after = await statsFor(page, 'quiet@example.com');
+    assert.equal(after.activeMs, before.activeMs, 'a hidden reader must not accrue time');
+    assert.deepEqual(Object.keys(after.pages).sort(), Object.keys(before.pages).sort());
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
   }
 });
 
-test('a reflection and its file survive a reload together', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage({ url: '/?note=Movement' });
+test('Return to notes keeps the reading URL, stack, horizontal position and scroll offsets', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({
+    viewport: { width: 1000, height: 320 },
+    url: '/?note=Orientation',
+  });
   try {
-    await waitForNote(page, 'Movement');
-    await page.locator('button.demo-log-activity').click();
-    await page.locator('dialog.demo-dialog-signin').waitFor();
-    await completeSignIn(page.locator('dialog.demo-dialog-signin'), 'reload@example.com');
-    const dialog = page.locator('dialog.demo-dialog-activity');
-    await dialog.waitFor();
-    await dialog.locator('textarea').fill('Walked at lunch and wrote it down.');
-    await dialog.locator('input[type="file"]').setInputFiles([
-      { name: 'walk.png', mimeType: 'image/png', buffer: TINY_PNG },
-    ]);
-    await dialog.getByRole('button', { name: 'Save as pending' }).click();
-    await dialog.waitFor({ state: 'detached' });
+    await waitForNote(page, 'Orientation');
+    assert.equal(await paneCount(page), 1);
+
+    const firstSheet = page.locator('.stack > .pane').first().locator('.pane-sheet');
+    const offset = await firstSheet.evaluate((element) => {
+      element.scrollTo(0, 10_000);
+      return element.scrollTop;
+    });
+    assert.ok(offset > 20, 'the first pane must be scrollable for this test');
+
+    await lastPane(page).locator('a[data-note-id="Base Note"]').first().click();
+    await page.locator('.stack > .pane').nth(1).waitFor();
+    const readingUrl = page.url();
+    assert.equal(await paneCount(page), 2);
+
+    // Mark the panes so a rebuild would be obvious, then move the row.
+    await page.evaluate(() => {
+      document.querySelectorAll('.stack > .pane').forEach((pane, index) => {
+        pane.dataset.marker = String(index);
+      });
+    });
+    // Read the row's position back after the geometry pass has settled: the
+    // covered-pane classes nudge a sticky scroller, and the reader's place is
+    // where it comes to rest, not the first value written.
+    const stackLeft = await stack(page).evaluate(async (element) => {
+      element.scrollLeft = Math.min(140, element.scrollWidth - element.clientWidth);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return element.scrollLeft;
+    });
+    assert.ok(stackLeft > 0, 'the row must be horizontally scrollable for this test');
+
+    const body = await goToView(page, 'account');
+    assert.match(page.url(), /view=account/);
+    assert.equal(await stack(page).isVisible(), false);
+
+    await page.locator('#account-back').click();
+    await page.waitForFunction(() => !document.querySelector('#stack').hidden);
+    await page.waitForFunction((expected) => location.href === expected, readingUrl);
+    assert.equal(page.url(), readingUrl, 'Return removes only `view`');
+
+    // The DOM was retained: the same panes, with no rebuild.
+    assert.equal(await paneCount(page), 2);
+    assert.equal(await page.locator('.stack > .pane[data-marker="0"]').count(), 1);
+    assert.equal(await page.locator('.stack > .pane[data-marker="1"]').count(), 1);
+
+    // The horizontal position and the note's scroll offset came back.
+    assert.equal(await stack(page).evaluate((element) => element.scrollLeft), stackLeft);
+    await page.waitForFunction((expected) => {
+      const top = document.querySelector('.stack > .pane .pane-sheet')?.scrollTop ?? -1;
+      return Math.abs(top - expected) <= 2;
+    }, offset);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('account views work on direct load, reload, Back/Forward and a project subpath', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({
+    url: `${config.projectPath}/?note=Breath&stackedNotes=Movement&view=settings`,
+  });
+  try {
+    const body = await waitForAccountView(page, 'settings');
+    await body.locator('#demo-appearance').waitFor();
+    // The reading parameters survived, under the prefix, and no note pane was built.
+    assert.match(page.url(), /\/vitruvian\/\?note=Breath&stackedNotes=Movement&view=settings$/);
+    assert.equal(await stack(page).isVisible(), false);
+    assert.equal(await paneCount(page), 0, 'a direct account load does not build the reading stack');
 
     await page.reload();
-    await page.click('#user-info-button');
-    const pane = lastPane(page);
-    await pane.locator('.demo-row').waitFor();
-    assert.match(await pane.textContent(), /Walked at lunch and wrote it down\./);
-    await pane.locator('.demo-evidence-image').waitFor();
-    assert.equal(await pane.locator('.demo-evidence-image').count(), 1);
+    await waitForAccountView(page, 'settings');
+    assert.match(page.url(), /view=settings$/);
+
+    // Back/Forward describe the region that was on screen.
+    await goToView(page, 'account');
+    await page.locator('#account-content .demo-signin').waitFor();
+    await page.goBack();
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('view') === 'settings');
+    await waitForAccountView(page, 'settings');
+    await page.goForward();
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('view') === 'account');
+    await waitForAccountView(page, 'account');
+
+    // Return to notes, then Back comes back to the region.
+    await page.locator('#account-back').click();
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('view'));
+    await waitForNote(page, 'Movement');
+    assert.equal(await paneCount(page), 2, 'the reading stack is built on return');
+    await page.goBack();
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('view') === 'account');
+    await waitForAccountView(page, 'account');
+    assert.equal(await page.locator('.stack > .pane').first().isVisible(), false);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
   }
 });
 
-test('an admin review reaches the participant’s pinned portfolio and history', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage({ url: '/?note=Reflection' });
+test('an account view works, and returning to the notes explains itself, when the notes index fails', { skip: !playwright }, async () => {
+  // The account region never needs the notes index, so `?view=settings` must
+  // open on its own; returning to the reader must then say the notes could not
+  // be loaded rather than leaving a blank stack.
+  const context = await browser.newContext({ viewport: config.viewport, baseURL: baseUrlFor() });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error));
+  await page.route('**/notes.json', (route) => route.abort());
   try {
-    await waitForNote(page, 'Reflection');
-    // The participant logs and pins a submission.
-    await page.locator('button.demo-log-activity').click();
-    await page.locator('dialog.demo-dialog-signin').waitFor();
-    await completeSignIn(page.locator('dialog.demo-dialog-signin'), 'reviewed@example.com');
-    const dialog = page.locator('dialog.demo-dialog-activity');
-    await dialog.waitFor();
-    await dialog.locator('textarea').fill('Wrote three lines at the end of the day.');
-    await dialog.getByRole('button', { name: 'Save as pending' }).click();
-    await dialog.waitFor({ state: 'detached' });
+    await page.goto('/?view=settings');
+    await page.locator('#account-content h1').waitFor();
+    assert.equal((await page.locator('#account-content h1').textContent()).trim(), 'Settings');
 
-    await page.click('#user-info-button');
-    let pane = lastPane(page);
-    await pane.locator('.demo-row').waitFor();
-    await pane.getByRole('button', { name: /^Pin the/ }).click();
-    await pane.locator('.demo-gallery-card').waitFor();
-    assert.match(await pane.locator('.demo-gallery-card .demo-status').textContent(), /Pending/);
-
-    // The demo admin verifies it.
-    await pane.getByRole('button', { name: 'Sign out' }).click();
-    await pane.locator('.demo-signin').waitFor();
-    await completeSignIn(pane, 'admin@vitruvian.demo');
-    await pane.locator('.demo-facts').waitFor();
-    await pane.getByRole('button', { name: 'Admin page' }).click();
-    const admin = lastPane(page);
-    await admin.locator('h1.demo-title').waitFor();
-    const submissions = admin.locator('.demo-section').nth(1);
-    const row = submissions.locator('.demo-row').filter({ hasText: 'reviewed@example.com' }).first();
-    await row.locator('.demo-status').filter({ hasText: 'Pending' }).waitFor();
-    await row.locator('select').selectOption('verified');
-    await row.getByRole('button', { name: 'Save review' }).click();
-    await row.locator('.demo-status').filter({ hasText: 'Verified' }).waitFor();
-
-    // Close Admin and sign back in as the participant.
-    await page.locator('.pane-close').last().click();
-    await page.waitForFunction(() => document.querySelectorAll('.stack > .pane').length === 2);
-    pane = lastPane(page);
-    await pane.getByRole('button', { name: 'Sign out' }).click();
-    await pane.locator('.demo-signin').waitFor();
-    await completeSignIn(pane, 'reviewed@example.com');
-
-    // The pinned card and the history row agree with the review.
-    await pane.locator('.demo-gallery-card').waitFor();
-    assert.match(await pane.locator('.demo-gallery-card .demo-status').textContent(), /Verified/);
-    assert.equal((await pane.locator('.demo-row .demo-status').first().textContent()).trim(), 'Verified');
+    await page.locator('#account-back').click();
+    await page.waitForFunction(() => !document.querySelector('#stack').hidden);
+    assert.equal(await page.locator('#stack > .stack-message').count(), 1);
+    assert.match(await page.locator('#stack').innerText(), /could not be loaded/);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
   }
 });
 
-test('a slow account load cannot overwrite a newer one', { skip: !playwright }, async () => {
+test('a legacy demo pane URL is migrated to the full-page region, keeping the real notes', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({
+    url: '/?note=Breath&stackedNotes=demo%3Aaccount&stackedNotes=Movement',
+  });
+  try {
+    const body = await waitForAccountView(page, 'account');
+    await body.locator('.demo-signin').waitFor();
+    // The reserved id is gone from the URL; the real notes stay, in order.
+    assert.equal(await currentView(page), 'account');
+    assert.doesNotMatch(page.url(), /demo/);
+    assert.match(page.url(), /note=Breath&stackedNotes=Movement&view=account/);
+
+    // Return to notes gives the reading stack the migration retained.
+    await page.locator('#account-back').click();
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('view'));
+    await waitForNote(page, 'Movement');
+    assert.equal(await paneCount(page), 2);
+    assert.match(page.url(), /note=Breath&stackedNotes=Movement/);
+
+    // The reserved ids cannot be opened as panes any more, even by hand.
+    await page.goto('/?note=demo%3Aadmin');
+    await waitForAccountView(page, 'admin');
+    assert.equal(await paneCount(page), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Random and Search leave the account region and open notes', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  try {
+    await waitForNote(page);
+    await goToView(page, 'settings');
+    assert.equal(await stack(page).isVisible(), false);
+
+    // Random works from an account view and comes back to the reader.
+    await page.click('#random-button');
+    await page.waitForFunction(() => !document.querySelector('#stack').hidden);
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('view'));
+    await page.waitForFunction(() => document.querySelectorAll('.stack > .pane').length === 2);
+    await waitForNote(page);
+
+    // Search works from an account view too.
+    await goToView(page, 'account');
+    await page.locator('#search-input').fill('Reflection');
+    await page.locator('.search-result').first().click();
+    await page.waitForFunction(() => !document.querySelector('#stack').hidden);
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('view'));
+    await page.waitForFunction(() =>
+      document.querySelector('.stack > .pane:last-child')?.dataset.noteId === 'Reflection');
+    await waitForNote(page, 'Reflection');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('only the exposed region is focusable, and a view change moves focus to its heading', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  try {
+    await waitForNote(page);
+    // Two panes, so a pane-close control exists to test with.
+    await lastPane(page).locator('a[data-note-id="Physical wellness"]').first().click();
+    await page.locator('.stack > .pane').nth(1).waitFor();
+
+    // In the reader, nothing in the account region is reachable or focusable.
+    assert.equal(await accountRegion(page).isVisible(), false);
+    assert.equal(await page.locator('#account-settings-link').isVisible(), false);
+    assert.equal(await page.locator('#account-back').isVisible(), false);
+    assert.equal(await page.locator('#account-content').isVisible(), false);
+
+    // Opening a view moves focus to its heading.
+    await page.click('#user-info-button');
+    await page.waitForFunction(() =>
+      document.activeElement?.tagName === 'H1' && document.activeElement.textContent.trim() === 'User info');
+
+    // In the account region the reader's own controls are not focusable.
+    assert.equal(await stack(page).isVisible(), false);
+    assert.equal(await page.locator('.pane-close').first().isVisible(), false);
+    assert.equal(await lastPane(page).isVisible(), false);
+
+    await page.locator('#account [data-account-view="settings"]').click();
+    await page.waitForFunction(() =>
+      document.activeElement?.tagName === 'H1' && document.activeElement.textContent.trim() === 'Settings');
+
+    // Returning to the notes focuses the reader's own pane again.
+    await page.locator('#account-back').click();
+    await page.waitForFunction(() => !document.querySelector('#stack').hidden);
+    assert.equal(await page.evaluate(() => Boolean(document.activeElement?.closest('.pane'))), true);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('appearance presets apply immediately, survive reload and stay light under an OS dark preference', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ colorScheme: 'dark' });
+  try {
+    await waitForNote(page);
+    // The OS asks for dark; the reader is light anyway.
+    assert.equal(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches), true);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'light');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.appearance), 'clear');
+    const clearBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    assert.equal(clearBg, 'rgb(245, 246, 248)');
+
+    const body = await goToView(page, 'settings');
+    const select = body.locator('#demo-appearance');
+    await select.waitFor();
+
+    // A preset applies immediately, to the whole page.
+    await select.selectOption('paper');
+    await page.waitForFunction(() => document.documentElement.dataset.appearance === 'paper');
+    const paperBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    assert.equal(paperBg, 'rgb(246, 241, 232)');
+    assert.notEqual(paperBg, clearBg);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'light');
+
+    // The choice survives a reload, and the reader stays light.
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.appearance === 'paper');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), paperBg);
+
+    await goToView(page, 'settings');
+    await page.locator('#demo-appearance').selectOption('lilac');
+    await page.waitForFunction(() => document.documentElement.dataset.appearance === 'lilac');
+    assert.equal(
+      await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
+      'rgb(246, 245, 250)',
+    );
+
+    // Back to the default.
+    await page.locator('#demo-appearance').selectOption('clear');
+    await page.waitForFunction(() => document.documentElement.dataset.appearance === 'clear');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), clearBg);
+
+    // Every preset keeps the layout identical: only colour tokens change.
+    const widths = [];
+    for (const preset of ['clear', 'paper', 'lilac']) {
+      await page.locator('#demo-appearance').selectOption(preset);
+      await page.waitForFunction((expected) => document.documentElement.dataset.appearance === expected, preset);
+      widths.push(await page.evaluate(() => {
+        const heading = document.querySelector('#account-content h1');
+        const nav = document.querySelector('.account-nav');
+        return [heading.getBoundingClientRect().width, nav.getBoundingClientRect().height];
+      }));
+    }
+    assert.deepEqual(widths[1], widths[0]);
+    assert.deepEqual(widths[2], widths[0]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a slow account render cannot overwrite a newer view', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage({ url: '/?note=Breath' });
   try {
     await waitForNote(page, 'Breath');
-    await page.click('#user-info-button');
-    const pane = lastPane(page);
-    await pane.locator('.demo-signin').waitFor();
-    await completeSignIn(pane, 'race@example.com');
-    await pane.locator('.demo-facts').waitFor();
+    const body = await signInFromAccount(page, 'race@example.com');
+    await body.locator('.demo-row, .demo-caption').first().waitFor();
 
-    // Hold the first submissions read of the account pane open, so one refresh
-    // is still in flight when the next one has already committed.
+    // Hold the first submissions read of the account view open, so one render is
+    // still in flight when a newer one has already committed.
     await page.evaluate(() => {
       const patch = (prototype) => {
         const original = prototype.getAll;
@@ -787,29 +1041,128 @@ test('a slow account load cannot overwrite a newer one', { skip: !playwright }, 
       patch(IDBIndex.prototype);
     });
 
-    // First entry: starts the slow refresh.
-    await page.locator('button.demo-log-activity').click();
-    const first = page.locator('dialog.demo-dialog-activity');
-    await first.waitFor();
-    await first.locator('textarea').fill('First entry.');
-    await first.getByRole('button', { name: 'Save as pending' }).click();
-    await first.waitFor({ state: 'detached' });
+    // A slow render of the account view starts, then Settings replaces it.
+    await page.locator('#account [data-account-view="settings"]').click();
+    await waitForAccountView(page, 'settings');
+    await page.locator('#account [data-account-view="account"]').click();
     await page.waitForFunction(() => window.__delayedRead === true);
+    await page.locator('#account [data-account-view="settings"]').click();
+    await waitForAccountView(page, 'settings');
 
-    // Second entry: a newer refresh finishes first.
-    await page.locator('button.demo-log-activity').click();
-    const second = page.locator('dialog.demo-dialog-activity');
-    await second.waitFor();
-    await second.locator('textarea').fill('Second entry.');
-    await second.getByRole('button', { name: 'Save as pending' }).click();
-    await second.waitFor({ state: 'detached' });
-
-    await pane.locator('.demo-row').filter({ hasText: 'Second entry.' }).waitFor();
-    // The delayed older load resolves now; it must not replace the newer view.
+    // The delayed account render resolves now; it must not replace the newer view.
     await page.waitForTimeout(1_600);
-    assert.match(await pane.textContent(), /First entry\./);
-    assert.match(await pane.textContent(), /Second entry\./);
-    assert.equal(await pane.locator('.demo-row').count(), 2);
+    assert.equal((await page.locator('#account-content h1.demo-title').textContent()).trim(), 'Settings');
+    assert.equal(await currentView(page), 'settings');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('an admin review reaches the participant’s pinned portfolio and history', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Reflection' });
+  try {
+    await waitForNote(page, 'Reflection');
+    // The participant logs and pins a submission.
+    await page.locator('button.demo-log-activity').click();
+    await page.locator('dialog.demo-dialog-signin').waitFor();
+    await completeSignIn(page.locator('dialog.demo-dialog-signin'), 'reviewed@example.com');
+    const dialog = page.locator('dialog.demo-dialog-activity');
+    await dialog.waitFor();
+    await dialog.locator('textarea').fill('Wrote three lines at the end of the day.');
+    await dialog.getByRole('button', { name: 'Save as pending' }).click();
+    await dialog.waitFor({ state: 'detached' });
+
+    let body = await goToView(page, 'account');
+    await body.locator('.demo-row').waitFor();
+    await body.getByRole('button', { name: /^Pin the/ }).click();
+    await body.locator('.demo-gallery-card').waitFor();
+    assert.match(await body.locator('.demo-gallery-card .demo-status').textContent(), /Pending/);
+
+    // The demo admin verifies it.
+    await body.getByRole('button', { name: 'Sign out' }).click();
+    await body.locator('.demo-signin').waitFor();
+    await completeSignIn(body, 'admin@vitruvian.demo');
+    await body.locator('.demo-facts').waitFor();
+    await page.locator('#account [data-account-view="admin"]').click();
+    const admin = await waitForAccountView(page, 'admin');
+    const submissions = admin.locator('.demo-section').nth(1);
+    const row = submissions.locator('.demo-row').filter({ hasText: 'reviewed@example.com' }).first();
+    await row.locator('.demo-status').filter({ hasText: 'Pending' }).waitFor();
+    await row.locator('select').selectOption('verified');
+    await row.getByRole('button', { name: 'Save review' }).click();
+    await row.locator('.demo-status').filter({ hasText: 'Verified' }).waitFor();
+
+    // Back to User info, sign out, and sign back in as the participant.
+    await page.locator('#account [data-account-view="account"]').click();
+    body = await waitForAccountView(page, 'account');
+    await body.getByRole('button', { name: 'Sign out' }).click();
+    await body.locator('.demo-signin').waitFor();
+    await completeSignIn(body, 'reviewed@example.com');
+
+    // The pinned card and the history row agree with the review.
+    await body.locator('.demo-gallery-card').waitFor();
+    assert.match(await body.locator('.demo-gallery-card .demo-status').textContent(), /Verified/);
+    assert.equal((await body.locator('.demo-row .demo-status').first().textContent()).trim(), 'Verified');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('clearing local data discards pending reading time and leaves no orphan statistics', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Breath' });
+  try {
+    await waitForNote(page, 'Breath');
+    const body = await signInFromAccount(page, 'orphan@example.com');
+
+    // Read a real note for a few seconds: below the 20s flush threshold.
+    await page.click('#app-title');
+    await waitForNote(page);
+    await page.waitForTimeout(3_000);
+
+    // Clear everything, including that unflushed stretch.
+    await goToView(page, 'account');
+    await body.getByRole('button', { name: 'Clear local demo data' }).click();
+    await page.locator('dialog.demo-dialog-confirm').getByRole('button', { name: 'Clear local data' }).click();
+    await page.locator('dialog.demo-dialog-confirm').waitFor({ state: 'detached' });
+    await page.waitForTimeout(600);
+
+    const { accounts, stats } = await readDemoData(page);
+
+    assert.equal(accounts.some((account) => account.email === 'orphan@example.com'), false);
+    const accountIds = new Set(accounts.map((account) => account.id));
+    assert.ok(stats.every((record) => accountIds.has(record.accountId)),
+      'no statistics row may outlive the account it belongs to');
+    assert.ok(stats.every((record) => record.synthetic === true));
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a reflection and its file survive a reload together', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Movement' });
+  try {
+    await waitForNote(page, 'Movement');
+    await page.locator('button.demo-log-activity').click();
+    await page.locator('dialog.demo-dialog-signin').waitFor();
+    await completeSignIn(page.locator('dialog.demo-dialog-signin'), 'reload@example.com');
+    const dialog = page.locator('dialog.demo-dialog-activity');
+    await dialog.waitFor();
+    await dialog.locator('textarea').fill('Walked at lunch and wrote it down.');
+    await dialog.locator('input[type="file"]').setInputFiles([
+      { name: 'walk.png', mimeType: 'image/png', buffer: TINY_PNG },
+    ]);
+    await dialog.getByRole('button', { name: 'Save as pending' }).click();
+    await dialog.waitFor({ state: 'detached' });
+
+    await page.reload();
+    const body = await goToView(page, 'account');
+    await body.locator('.demo-row').waitFor();
+    assert.match(await body.textContent(), /Walked at lunch and wrote it down\./);
+    await body.locator('.demo-evidence-image').waitFor();
+    assert.equal(await body.locator('.demo-evidence-image').count(), 1);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -847,7 +1200,7 @@ test('stacked navigation, Back/Forward, scroll restoration and previews still wo
   const { context, page, errors } = await openPage({ viewport: { width: 1280, height: 300 }, url: '/?note=Orientation' });
   try {
     await waitForNote(page, 'Orientation');
-    assert.equal(await page.locator('.stack > .pane').count(), 1);
+    assert.equal(await paneCount(page), 1);
 
     const firstSheet = page.locator('.stack > .pane').first().locator('.pane-sheet');
     const offset = await firstSheet.evaluate((element) => {
@@ -858,15 +1211,15 @@ test('stacked navigation, Back/Forward, scroll restoration and previews still wo
 
     await lastPane(page).locator('a[data-note-id="Base Note"]').first().click();
     await page.locator('.stack > .pane').nth(1).waitFor();
-    assert.equal(await page.locator('.stack > .pane').count(), 2);
+    assert.equal(await paneCount(page), 2);
     assert.match(page.url(), /note=Orientation&stackedNotes=Base(%20|\+)Note/);
 
     await page.goBack();
     await page.locator('.stack > .pane').nth(1).waitFor({ state: 'detached' });
-    assert.equal(await page.locator('.stack > .pane').count(), 1);
+    assert.equal(await paneCount(page), 1);
     await page.goForward();
     await page.locator('.stack > .pane').nth(1).waitFor();
-    assert.equal(await page.locator('.stack > .pane').count(), 2);
+    assert.equal(await paneCount(page), 2);
 
     // Closing the covering pane rebuilds the row; the reader's place comes back.
     await page.locator('.pane-close').last().click();
@@ -921,7 +1274,7 @@ test('search, backlinks and the subpath build still work', { skip: !playwright }
   }
 });
 
-test('the mobile layout keeps the header usable and shows one pane', { skip: !playwright }, async () => {
+test('the mobile layout keeps the header and both regions usable', { skip: !playwright }, async () => {
   // Reduced motion turns the search field's width transition off, so each
   // breakpoint can be measured the moment the viewport changes.
   const { context, page, errors } = await openPage({ viewport: config.mobileViewport, reducedMotion: 'reduce' });
@@ -951,12 +1304,32 @@ test('the mobile layout keeps the header usable and shows one pane', { skip: !pl
     }
     await page.setViewportSize(config.mobileViewport);
 
-    // The demo works at this width too.
-    await page.click('#user-info-button');
-    const pane = lastPane(page);
-    await pane.locator('.demo-signin').waitFor();
-    await completeSignIn(pane, 'phone@example.com');
-    await pane.locator('.demo-facts').waitFor();
+    // The account region fits this width, and its own navigation stays usable.
+    const body = await goToView(page, 'account');
+    await body.locator('.demo-signin').waitFor();
+    for (const width of [390, 360]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.evaluate(() => new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }));
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+        true,
+        `the account region does not overflow at ${width}px`,
+      );
+      const back = await page.locator('#account-back').boundingBox();
+      assert.ok(back.x >= 0 && back.x + back.width <= width + 0.5, `Return to notes fits at ${width}px`);
+    }
+    await page.setViewportSize(config.mobileViewport);
+
+    // Settings is usable at this width too, and the demo still works.
+    const settings = await goToView(page, 'settings');
+    const select = await settings.locator('#demo-appearance').boundingBox();
+    assert.ok(select.width > 60 && select.x + select.width <= config.mobileViewport.width + 0.5);
+
+    await goToView(page, 'account');
+    await completeSignIn(body, 'phone@example.com');
+    await body.locator('.demo-facts').waitFor();
     assert.deepEqual(errors, []);
   } finally {
     await context.close();

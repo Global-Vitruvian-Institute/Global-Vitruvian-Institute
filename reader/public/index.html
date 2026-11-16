@@ -3,14 +3,32 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
-    <title>stacked-notes</title>
+    <meta name="color-scheme" content="light">
+    <title>Vitruvian Institute</title>
+    <script>
+      /*
+       * Apply the saved appearance before first paint, so the shell never
+       * flashes the default preset on the way to another one. Kept in step with
+       * reader/public/appearance.js (APPEARANCE_KEY and APPEARANCES) by
+       * tests/site.test.mjs; there is no dark mode to flash through.
+       */
+      (function () {
+        try {
+          var saved = window.localStorage.getItem('vitruvian.appearance');
+          if (saved === 'clear' || saved === 'paper' || saved === 'lilac') {
+            document.documentElement.setAttribute('data-appearance', saved);
+          }
+        } catch (error) {
+          /* storage is refused; the default preset applies */
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <div class="app">
       <header class="app-header">
-        <a class="app-title" id="app-title" href="/">stacked-notes</a>
+        <a class="app-title" id="app-title" href="/">Vitruvian Institute</a>
 
         <nav class="app-nav" aria-label="Reader">
           <a class="header-link about-link" id="about-link" href="/" hidden>About these notes</a>
@@ -40,6 +58,23 @@
       </header>
 
       <main class="stack" id="stack" aria-label="Open notes"></main>
+
+      <!--
+        The account region is a whole page beside the reader, not a pane: no
+        spine, no close control and no horizontal geometry. It is hidden while
+        the reader is showing, so exactly one main region is exposed at a time.
+      -->
+      <main class="account" id="account" hidden aria-label="Account">
+        <div class="account-inner">
+          <nav class="account-nav" aria-label="Account views">
+            <a class="account-nav-back" id="account-back" data-account-back href="./">Return to notes</a>
+            <a class="account-nav-link" id="account-user-link" data-account-view="account" href="./?view=account">User info</a>
+            <a class="account-nav-link" id="account-settings-link" data-account-view="settings" href="./?view=settings">Settings</a>
+            <a class="account-nav-link" id="account-admin-link" data-account-view="admin" href="./?view=admin" hidden>Admin</a>
+          </nav>
+          <article class="account-content note-content" id="account-content" tabindex="-1"></article>
+        </div>
+      </main>
     </div>
 
     <aside class="preview" id="preview" aria-hidden="true" hidden>

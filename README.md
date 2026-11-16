@@ -1,8 +1,8 @@
-# Global Vitruvian Institute
+# Vitruvian Institute
 
 A static, stacked-pane reader for the Markdown in `vault/`. Edit notes in Obsidian; Markdown is the source of truth. Following a wikilink opens another pane, preserving your reading path. Includes search, backlinks, hover previews and shareable stacks.
 
-A small **browser-only participation demo** sits on top of the reader: notes marked `activity: true` gain a *Log activity* control, and a **User info** entry in the header opens a local account view with a pinned portfolio, an activity history and an admin review page. It is a modest illustration of how participating *might* work later — not a product, and not a substitute for the guide. The Markdown guide is the primary content and its notes are still being authored. There is no server, no real authentication and no email — see [Local participation demo](#local-participation-demo).
+A small **browser-only participation demo** sits on top of the reader: notes marked `activity: true` gain a *Log activity* control, and a **User info** entry in the header opens a local account page with a pinned portfolio, an activity history and an admin review page. It is a modest illustration of how participating *might* work later — not a product, and not a substitute for the guide. The Markdown guide is the primary content and its notes are still being authored. There is no server, no real authentication and no email — see [Local participation demo](#local-participation-demo).
 
 ## Local preview
 
@@ -17,10 +17,31 @@ python3 -m http.server 4182 --bind 127.0.0.1 --directory dist
 
 Open http://127.0.0.1:4182/. Rebuild after editing notes. The home page is `vault/Base Note.md`. URLs use `?note=…&stackedNotes=…`, so links and reloads work on static hosting, including GitHub Pages project subpaths.
 
+## Account pages and appearance
+
+The account views are a **separate full page**, not a pane in the reading stack:
+
+```text
+?note=Breath&stackedNotes=Movement                the reader
+?note=Breath&stackedNotes=Movement&view=account   User info
+?note=Breath&stackedNotes=Movement&view=settings  Settings
+?note=Breath&stackedNotes=Movement&view=admin     Admin (authorized accounts only)
+```
+
+**Return to notes** removes only `view`, so the reading stack, its horizontal position and every note's scroll offset come back exactly as they were. Reload, browser Back/Forward and direct links all reproduce the same page, and `?view=…` works under a project subpath because it is an ordinary query parameter. User info stays in the header; Settings and the authorized Admin entry live in the account page's own small navigation row. Header **Random** and **Search** still work from any account page — choosing a note returns to the reader.
+
+**Settings** offers three built-in light appearances, with no account and no dependency:
+
+- **Clear** (default) — white surfaces, charcoal text and blue links.
+- **Paper** — warm off-white surfaces with the same blue links.
+- **Soft Lilac** — neutral light surfaces with restrained violet accents.
+
+They change colour tokens only: layout, typography and behaviour are identical, and there is no dark or automatic mode. The choice is stored in this browser's `localStorage` (one key, `vitruvian.appearance`) and applied before first paint; if the browser refuses storage, the preset still applies for the visit and the page says so.
+
 ## Tests
 
 ```sh
-npm test           # vault, build, static reader, demo domain, store and tracking
+npm test           # vault, build, static reader, routes, appearance, demo domain, store and tracking
 npm run test:browser   # real-browser workflows and reader regressions
 ```
 
@@ -46,7 +67,7 @@ Everything below runs in the reader's own page. It exists to show what participa
 2. Enter any email address (for example `you@example.com`) and choose *Continue*.
 3. Type the demo verification code that is printed on screen: **`482913`**.
 
-There is no password and no verification email; the code is displayed precisely because there is no delivery step. An address that has not been seen before creates a new local account. `admin@vitruvian.demo` additionally reveals an *Admin page* link inside **User info** — the admin view is never a global navigation item.
+There is no password and no verification email; the code is displayed precisely because there is no delivery step. An address that has not been seen before creates a new local account. `admin@vitruvian.demo` additionally reveals an *Admin* entry in the account page's own navigation — the admin view is never a global navigation item.
 
 ### Activities, portfolio and review
 
@@ -59,12 +80,12 @@ There is no password and no verification email; the code is displayed precisely 
 
 - At most **3 files**, **2 MB each**, **4 MB in total**, per submission.
 - PNG, JPEG, GIF, WebP and AVIF preview inside the page. Everything else — including PDF, text, HTML and SVG — is offered as a download whose bytes are served as `application/octet-stream`, so an uploaded file can never be rendered as markup in this origin.
-- Evidence is stored as raw bytes in IndexedDB alongside its submission, in one transaction: a failed write leaves nothing half-saved. When a pane goes away its preview URLs are revoked.
+- Evidence is stored as raw bytes in IndexedDB alongside its submission, in one transaction: a failed write leaves nothing half-saved. When the account page goes away its preview URLs are revoked.
 - If the browser refuses storage or runs out of room, the reader says so in the dialog and keeps everything you typed; it never falls back to `localStorage`.
 
 ### Reading statistics
 
-Active time and distinct pages are measured only for the signed-in reader, only for notes that actually rendered from the vault, and only while the tab is visible, the reader is not idle and no demo dialog is open. Hover previews, failed loads, demo/account/admin panes and pane rebuilds are not pages. Measured figures are labelled *local estimates*; the seeded participants' figures are labelled *synthetic*.
+Active time and distinct pages are measured only for the signed-in reader, only for notes that actually rendered from the vault, and only while the tab is visible, the reader is not idle, no demo dialog is open and the reader is actually showing. Hover previews, failed loads, account pages and pane rebuilds are not pages. Measured figures are labelled *local estimates*; the seeded participants' figures are labelled *synthetic*.
 
 ### Clearing local data
 
@@ -72,4 +93,4 @@ Active time and distinct pages are measured only for the signed-in reader, only 
 
 ## Reader provenance
 
-The renderer, vault model, browser pane interaction and CSS in `reader/` are reused from the local `stacked-notes` project (the agent-wiki viewer). No agent-wiki notes, private repository history, server configuration or local paths were copied. The static adapter replaces its Node API; Wikipedia/server-mounted design panes are not available in this static edition. Existing external URLs remain ordinary outbound links where supported. The demo modules (`reader/public/demo-*.js`) are additive: they render inside ordinary panes, and the reader's navigation, search, backlinks, previews and URL behaviour are unchanged.
+The renderer, vault model, browser pane interaction and CSS in `reader/` are reused from the local `stacked-notes` project (the agent-wiki viewer). No agent-wiki notes, private repository history, server configuration or local paths were copied. The static adapter replaces its Node API; Wikipedia/server-mounted design panes are not available in this static edition. Existing external URLs remain ordinary outbound links where supported. The demo modules (`reader/public/demo-*.js`) are additive: they decorate rendered notes, and the reader's navigation, search, backlinks, previews and URL behaviour are unchanged.

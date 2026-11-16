@@ -9,7 +9,16 @@
  * on screen because there is no email delivery, no password and no server.
  */
 
-/** The two reserved pane ids. They travel in the ordinary `?note=` parameter. */
+/**
+ * The two reserved pane ids from the previous design, when the account and admin
+ * views were panes inside the reading stack.
+ *
+ * They are *legacy URL values only*. `view-route.js` still reads them out of old
+ * `?note=` / `?stackedNotes=` parameters and migrates them to the matching
+ * full-page account region, and `demo-tracking.js` still excludes them from
+ * measurable notes. They are never written back to a URL, and `app.js` rejects
+ * them as new reader panes, so nothing can open them again.
+ */
 export const DEMO_PANE_ACCOUNT = 'demo:account';
 export const DEMO_PANE_ADMIN = 'demo:admin';
 export const DEMO_PANE_IDS = Object.freeze([DEMO_PANE_ACCOUNT, DEMO_PANE_ADMIN]);

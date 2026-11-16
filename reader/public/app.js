@@ -1,13 +1,16 @@
 /**
- * stacked-notes — the browser reader.
+ * Vitruvian Institute — the browser reader.
  *
  * The URL is the state:
  *
  *   /<first-note>?stackedNotes=<second>&stackedNotes=<third>
+ *   ?note=<first>&stackedNotes=<second>&view=account|settings|admin
  *
  * The path is the leftmost pane; each repeated query parameter is a pane to its
- * right. Everything else (fetched note HTML, backlinks, search, previews) is
- * derived from that stack. Nothing here writes to the vault.
+ * right. `view` selects a full-page account region instead of the reading
+ * stack — the reading parameters and hash are preserved either way. Everything
+ * else (fetched note HTML, backlinks, search, previews) is derived from that
+ * stack. Nothing here writes to the vault.
  *
  * No build step and no dependencies: this file is loaded directly as a module.
  */
@@ -18,7 +21,24 @@ import { designPaneLayout, designContextRequest, designContextHeading } from './
 import { createDemoStore } from './demo-store.js';
 import { createDemoUi } from './demo-ui.js';
 import { createReadingTracker } from './demo-tracking.js';
-import { DEMO_PANE_ACCOUNT, DEMO_PANE_ADMIN, demoPaneLabel, isDemoPaneId } from './demo-model.js';
+import { demoPaneLabel, isAdminEmail, isDemoPaneId } from './demo-model.js';
+import {
+  buildRouteQuery,
+  isAccountView,
+  parseViewRoute,
+  VIEW_ACCOUNT,
+  VIEW_ADMIN,
+  VIEW_READER,
+  VIEW_SETTINGS,
+} from './view-route.js';
+import { initAppearance } from './appearance.js';
+
+/** The page title for each region; the reader's own title is the note's. */
+const VIEW_TITLES = Object.freeze({
+  [VIEW_ACCOUNT]: 'User info',
+  [VIEW_SETTINGS]: 'Settings',
+  [VIEW_ADMIN]: 'Admin',
+});
 
 const els = {
   title: document.getElementById('app-title'),
@@ -29,6 +49,12 @@ const els = {
   key: document.getElementById('search-key'),
   results: document.getElementById('search-results'),
   stack: document.getElementById('stack'),
+  account: document.getElementById('account'),
+  accountContent: document.getElementById('account-content'),
+  accountBack: document.getElementById('account-back'),
+  accountUser: document.getElementById('account-user-link'),
+  accountSettings: document.getElementById('account-settings-link'),
+  accountAdmin: document.getElementById('account-admin-link'),
   preview: document.getElementById('preview'),
   previewContent: document.getElementById('preview-content'),
   status: document.getElementById('status'),
@@ -41,8 +67,16 @@ const desktopPointer = window.matchMedia('(min-width: 801px) and (hover: hover) 
 
 const state = {
   bootstrap: null,
+  /** The notes index failed to load; the account region still works. */
+  bootstrapError: null,
   stack: [],
   panes: [],
+  /** Which page region is exposed: the reading stack or an account view. */
+  view: VIEW_READER,
+  /** The reading URL's fragment, so switching regions never drops it. */
+  routeHash: '',
+  /** The reading row's horizontal position while an account view is showing. */
+  stackScrollLeft: 0,
   ready: false,
   previewEnabled: false,
 };
@@ -118,8 +152,16 @@ function designUrlFromPaneId(id) {
   }
 }
 
+/**
+ * A pane id is a note, a design example or a Wikipedia article.
+ *
+ * The reserved `demo:` ids from the old pane-based account design are never
+ * panes again: they are read out of old URLs and migrated to the matching
+ * full-page region (see `view-route.js`), but they cannot be opened here.
+ */
 function isValidPaneId(id) {
-  return isDemoPaneId(id) || Boolean(designUrlFromPaneId(id)) || Boolean(wikipediaArticle(id)) || isValidNoteId(id);
+  if (isDemoPaneId(id)) return false;
+  return Boolean(designUrlFromPaneId(id)) || Boolean(wikipediaArticle(id)) || isValidNoteId(id);
 }
 
 function noteHref(id) {
@@ -132,46 +174,64 @@ function noteHref(id) {
   return './?note=' + encodeURIComponent(id);
 }
 
-function stackHref(ids) {
-  const valid = ids.filter(isValidPaneId);
-  if (!valid.length) return '/';
-  const rest = valid
-    .slice(1)
-    .map((id) => `stackedNotes=${encodeURIComponent(id)}`)
-    .join('&');
-  return noteHref(valid[0]) + (rest ? `&${rest}` : '');
+/**
+ * The URL for a whole route: the reading stack plus the region.
+ *
+ * `view=reader` is the absence of the parameter, so a stack has exactly one
+ * reading URL however it was reached. Everything is relative to the current
+ * page, which is what keeps the static build working under a project subpath.
+ */
+function stackHref(ids, { view = VIEW_READER, hash = '' } = {}) {
+  return `./${buildRouteQuery({ ids: ids.filter(isValidPaneId), view, hash })}`;
 }
 
 /**
- * Read the stack out of the URL, dropping any id that is not a valid note id.
- * Returns whether anything had to be dropped so the caller can normalise the
- * URL with `replaceState` (never `pushState`: the reader did not navigate).
+ * Resolve the whole URL: the reading stack, the region and the fragment.
+ *
+ * Unusable ids are dropped, reserved legacy ids are migrated to their region by
+ * `parseViewRoute`, and a URL that names nothing usable falls back to the home
+ * note — including in an account URL, so "Return to notes" always has a
+ * destination.
  */
-function stackFromLocation() {
-  const params = new URLSearchParams(window.location.search);
-  const first = params.get('note');
-  const candidates = first ? [first, ...params.getAll('stackedNotes')] : [];
+function routeFromUrl() {
+  const parsed = parseViewRoute(window.location.search, window.location.hash);
 
   const ids = [];
   let invalid = false;
-  for (const id of candidates) {
+  for (const id of parsed.ids) {
     if (isValidPaneId(id)) ids.push(id);
     else invalid = true;
   }
-  return { ids, invalid };
+
+  let nextIds = ids;
+  let needsReplace = parsed.changed || invalid;
+  if (!nextIds.length && state.bootstrap?.defaultNoteId) {
+    nextIds = [state.bootstrap.defaultNoteId];
+    needsReplace = true;
+  }
+
+  return {
+    ids: nextIds,
+    view: parsed.view,
+    hash: safeDecode(parsed.hash),
+    needsReplace,
+    // Only the reader has nothing to show for an empty vault; an account view
+    // still explains itself.
+    empty: !nextIds.length && parsed.view === VIEW_READER,
+  };
 }
 
 /**
- * Write the URL for a stack, never throwing. A browser can refuse a history
+ * Write the URL for a route, never throwing. A browser can refuse a history
  * write (a SecurityError for a URL it reads as another origin, for instance);
  * the caller must then put its state back so the DOM and the URL still agree.
  */
-function writeStackUrl(ids, { replace = false } = {}) {
-  // Never write a URL that does not describe the whole stack: a caller that
+function writeRouteUrl(ids, { view = VIEW_READER, hash = '', replace = false } = {}) {
+  // Never write a URL that does not describe the whole route: a caller that
   // hands us a junk id gets a refusal (and restores its state) instead of a
-  // silently shorter URL that disagrees with the panes on screen.
+  // silently shorter URL that disagrees with what is on screen.
   if (!ids.every(isValidPaneId)) return false;
-  const href = stackHref(ids);
+  const href = stackHref(ids, { view, hash });
   try {
     if (replace) window.history.replaceState(null, '', href);
     else window.history.pushState(null, '', href);
@@ -181,32 +241,46 @@ function writeStackUrl(ids, { replace = false } = {}) {
   }
 }
 
-/**
- * Resolve the stack the URL describes, normalising invalid ids and falling
- * back to the default note when the URL names nothing usable.
- */
-function stackFromUrl() {
-  const located = stackFromLocation();
-  let ids = located.ids;
-  let needsReplace = located.invalid;
-
-  if (!ids.length) {
-    const defaultId = state.bootstrap?.defaultNoteId;
-    if (!defaultId) {
-      if (needsReplace) writeStackUrl([], { replace: true });
-      return { ids: [], empty: true };
-    }
-    ids = [defaultId];
-    needsReplace = true;
-  }
-
-  if (needsReplace) {
+/** Read the URL once and put both regions in step with it. */
+function reconcileRoute() {
+  const route = routeFromUrl();
+  if (route.needsReplace) {
     // Best effort: if the browser refuses even this same-origin replace, the
-    // valid stack is still what gets rendered, so nothing is built from a junk
+    // valid route is still what gets rendered, so nothing is built from a junk
     // id; the stale segment simply stays in the address bar.
-    writeStackUrl(ids, { replace: true });
+    writeRouteUrl(route.ids, { view: route.view, hash: route.hash, replace: true });
   }
-  return { ids, empty: false };
+  applyRoute(route);
+}
+
+function sameIds(a, b) {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
+/** Expose exactly one main region. The other keeps its DOM and is not focusable. */
+function showRegion(view) {
+  const account = isAccountView(view);
+  els.stack.hidden = account;
+  els.account.hidden = !account;
+  document.body.dataset.region = account ? 'account' : 'reader';
+}
+
+function applyRoute(route) {
+  if (route.empty) {
+    state.view = VIEW_READER;
+    state.routeHash = route.hash;
+    state.stack = route.ids;
+    showRegion(VIEW_READER);
+    syncTrackingPause();
+    if (state.bootstrapError) renderBootstrapError(state.bootstrapError);
+    else renderEmptyVault();
+    return;
+  }
+  if (isAccountView(route.view)) {
+    enterAccountView(route);
+    return;
+  }
+  enterReaderView({ ids: route.ids, hash: route.hash });
 }
 
 /**
@@ -247,7 +321,7 @@ function scrollBehavior() {
 }
 
 function appTitle() {
-  return state.bootstrap?.app?.title || 'stacked-notes';
+  return state.bootstrap?.app?.title || 'Vitruvian Institute';
 }
 
 function announce(message) {
@@ -305,23 +379,18 @@ async function boot() {
     bootstrap = await getBootstrap();
   } catch (error) {
     state.bootstrap = null;
-    renderBootstrapError(error);
+    state.bootstrapError = error;
+    // The account region does not need the notes index, so the URL is still
+    // reconciled: `?view=account` and `?view=settings` must open even now.
+    reconcileRoute();
     return;
   }
 
   state.bootstrap = bootstrap;
+  state.bootstrapError = null;
   state.ready = true;
   applyChrome(bootstrap);
-
-  const located = stackFromUrl();
-  if (located.empty) {
-    state.stack = [];
-    renderEmptyVault();
-    return;
-  }
-
-  state.stack = located.ids;
-  renderStack({ animate: false });
+  reconcileRoute();
 }
 
 function applyChrome(bootstrap) {
@@ -343,6 +412,200 @@ function applyChrome(bootstrap) {
   state.previewEnabled = bootstrap.features?.preview !== false;
 }
 
+/* ---------------------------------------------------------- page regions --- */
+
+/**
+ * Come back to the reading stack, or build it if it is not on screen yet.
+ *
+ * Returning from an account view keeps the panes that were already there: the
+ * reader's horizontal position and every note's scroll offset are restored from
+ * the memory the sheets keep while they are visible, and an unchanged stack is
+ * never rebuilt.
+ */
+function enterReaderView({ ids, hash = '', heading = null, focusElement = false, focusIndex = null, animate = false }) {
+  const returning = state.view !== VIEW_READER;
+  state.view = VIEW_READER;
+  state.routeHash = hash;
+  showRegion(VIEW_READER);
+  syncTrackingPause();
+  // The account region's evidence URLs must not outlive the view showing them.
+  if (returning) demo?.releasePane(els.accountContent);
+
+  // Nothing to show: the notes index never loaded, or the vault is empty. Say
+  // so here rather than leaving the reader blank after an account view.
+  if (!ids.length) {
+    state.stack = [];
+    if (state.bootstrapError) renderBootstrapError(state.bootstrapError);
+    else renderEmptyVault();
+    return;
+  }
+
+  const unchanged = state.panes.length > 0
+    && state.panes.length === ids.length
+    && sameIds(ids, state.stack);
+
+  if (unchanged) {
+    restoreReaderPosition({ focusElement, focusIndex });
+    if (heading) {
+      const pane = state.panes[state.panes.length - 1];
+      if (pane) scrollToHeading(pane, heading, scrollBehavior());
+    } else if (hash) {
+      scrollLastPaneToHash(hash);
+    }
+    return;
+  }
+
+  state.stack = ids;
+  renderStack({ focusElement, focusIndex, heading, hash, animate });
+}
+
+/** Show an account region, leaving the reading stack's DOM untouched. */
+function enterAccountView({ ids, view, hash = '' }) {
+  if (state.view === VIEW_READER) {
+    captureReaderPosition();
+    // The row is about to be hidden, where every sheet reports a zero box.
+    // Forgetting the last visibility means the reveal restores each offset.
+    for (const pane of state.panes) {
+      const sheet = pane.querySelector('.pane-sheet');
+      if (sheet) sheetVisibility.delete(sheet);
+    }
+  }
+
+  state.view = view;
+  state.stack = ids;
+  state.routeHash = hash;
+  dismissPreview();
+  closeSearch();
+  showRegion(view);
+  // A hidden reader is not being read, and no geometry pass may pick a pane
+  // back up behind the account page.
+  tracker?.setActiveNote(null);
+  syncTrackingPause();
+  renderAccountView(view, { focus: true });
+}
+
+function captureReaderPosition() {
+  state.stackScrollLeft = els.stack.scrollLeft;
+  for (const pane of state.panes) {
+    const sheet = pane.querySelector('.pane-sheet');
+    if (sheet) rememberPaneScroll(pane, sheet);
+  }
+}
+
+function restoreReaderPosition({ focusElement = false, focusIndex = null } = {}) {
+  for (const pane of state.panes) restorePaneScroll(pane);
+  if (els.stack.scrollLeft !== state.stackScrollLeft) els.stack.scrollLeft = state.stackScrollLeft;
+  scheduleGeometry();
+  // Focus straight away: `preventScroll` means it cannot move the row itself.
+  if (focusElement) {
+    const at = focusIndex === null ? state.panes.length - 1 : focusIndex;
+    state.panes[at]?.focus({ preventScroll: true });
+  }
+
+  // The geometry pass toggles the covered/overlapped classes, and Chrome can
+  // nudge a sticky scroller's offset while it recomputes them. Put the row back
+  // once that has settled, so the reader lands where they actually left it.
+  window.requestAnimationFrame(() => {
+    if (state.view !== VIEW_READER) return;
+    if (els.stack.scrollLeft !== state.stackScrollLeft) els.stack.scrollLeft = state.stackScrollLeft;
+  });
+}
+
+function scrollLastPaneToHash(hash) {
+  if (!hash) return;
+  const pane = state.panes[state.panes.length - 1];
+  if (pane) scrollToHeading(pane, hash, 'auto');
+}
+
+/* --------------------------------------------------------- account region --- */
+
+/** A per-visit token, so a slow render cannot commit over a newer region. */
+let accountRenderToken = 0;
+
+function syncAccountNav(view) {
+  const hash = state.routeHash ?? '';
+  els.accountBack.href = stackHref(state.stack, { view: VIEW_READER, hash });
+  els.accountUser.href = stackHref(state.stack, { view: VIEW_ACCOUNT, hash });
+  els.accountSettings.href = stackHref(state.stack, { view: VIEW_SETTINGS, hash });
+  els.accountAdmin.href = stackHref(state.stack, { view: VIEW_ADMIN, hash });
+
+  for (const link of [els.accountUser, els.accountSettings, els.accountAdmin]) {
+    if (link.dataset.accountView === view) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+  // Admin navigation is authorized, and only inside the account region.
+  els.accountAdmin.hidden = !(demo?.session && isAdminEmail(demo.session.email));
+}
+
+async function renderAccountView(view, { focus = false } = {}) {
+  const token = ++accountRenderToken;
+  state.view = view;
+  syncAccountNav(view);
+  document.title = `${VIEW_TITLES[view] ?? 'Account'} · ${appTitle()}`;
+
+  const scrollTop = els.account.scrollTop;
+
+  if (!demo) {
+    els.accountContent.replaceChildren(demoUnavailable());
+    if (focus) focusAccountHeading();
+    return;
+  }
+
+  const committed = await demo.renderPane(els.accountContent, view, {
+    isCurrent: () => token === accountRenderToken && state.view === view,
+  });
+  if (token !== accountRenderToken) return;
+  // A refresh after a pin or a review must not move the reader's place.
+  els.account.scrollTop = scrollTop;
+  if (committed && focus) focusAccountHeading();
+}
+
+function focusAccountHeading() {
+  const heading = els.accountContent.querySelector('h1');
+  if (heading) {
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+    return;
+  }
+  els.accountContent.focus({ preventScroll: true });
+}
+
+function demoUnavailable() {
+  const wrap = document.createElement('div');
+  wrap.className = 'demo-failure';
+  const heading = document.createElement('h1');
+  heading.className = 'demo-title';
+  heading.textContent = 'User info is unavailable';
+  const lede = document.createElement('p');
+  lede.className = 'demo-lede';
+  lede.textContent = 'The local demo could not start in this browser. The notes themselves are unaffected.';
+  wrap.append(heading, lede);
+  return wrap;
+}
+
+/**
+ * Switch to a full-page account region. The reading query parameters and the
+ * hash are preserved, so "Return to notes" only has to remove `view`.
+ */
+function goToView(view) {
+  if (!isAccountView(view)) return;
+  if (state.view === view) {
+    // Already there: refreshing is not a navigation, so no history entry.
+    renderAccountView(view, { focus: false });
+    return;
+  }
+  const hash = state.routeHash ?? '';
+  if (!writeRouteUrl(state.stack, { view, hash })) return;
+  enterAccountView({ ids: state.stack, view, hash });
+}
+
+function goToReader() {
+  if (state.view === VIEW_READER) return;
+  const hash = state.routeHash ?? '';
+  if (!writeRouteUrl(state.stack, { view: VIEW_READER, hash })) return;
+  enterReaderView({ ids: state.stack, hash, focusElement: true });
+}
+
 /* ------------------------------------------------------------- the stack --- */
 
 let renderToken = 0;
@@ -355,7 +618,7 @@ let renderToken = 0;
  * synchronously so the horizontal geometry is final immediately; their bodies
  * fill in as their note requests resolve.
  */
-function renderStack({ focusElement = false, heading = null, animate = true } = {}) {
+function renderStack({ focusElement = false, focusIndex = null, heading = null, hash = '', animate = true } = {}) {
   const token = ++renderToken;
   dismissPreview();
   closeSearch();
@@ -373,6 +636,7 @@ function renderStack({ focusElement = false, heading = null, animate = true } = 
     state.panes.push(pane);
     fillPane(pane, id, index, token, {
       heading: index === state.stack.length - 1 ? heading : null,
+      hash: index === state.stack.length - 1 ? hash : '',
       animate,
     });
   });
@@ -382,12 +646,12 @@ function renderStack({ focusElement = false, heading = null, animate = true } = 
   scheduleGeometry();
 
   if (state.panes.length) {
-    const index = state.panes.length - 1;
+    const at = focusIndex === null ? state.panes.length - 1 : focusIndex;
     // Wait for the browser to lay the new panes out before measuring them.
     window.requestAnimationFrame(() => {
       if (token !== renderToken) return;
-      centerPane(index, animate ? scrollBehavior() : 'auto');
-      if (focusElement) state.panes[index]?.focus({ preventScroll: true });
+      centerPane(at, animate ? scrollBehavior() : 'auto');
+      if (focusElement) state.panes[at]?.focus({ preventScroll: true });
     });
   }
 }
@@ -473,10 +737,13 @@ function syncSheetVisibility(pane, index, narrow) {
   const visible = narrow ? index === state.panes.length - 1 : !pane.classList.contains('is-covered');
   const wasVisible = sheetVisibility.get(sheet);
   sheetVisibility.set(sheet, visible);
-  if (visible && wasVisible === false) restorePaneScroll(pane);
+  // Anything but a sheet that was already visible on screen is restored: a
+  // newly revealed sheet, and one whose visibility was forgotten while the row
+  // was hidden behind an account view.
+  if (visible && wasVisible !== true) restorePaneScroll(pane);
 }
 
-async function fillPane(pane, id, index, token, { heading, animate }) {
+async function fillPane(pane, id, index, token, { heading, hash = '', animate }) {
   const article = pane.querySelector('.note-content');
   const backlinks = pane.querySelector('.backlinks');
   const spineTitle = pane.querySelector('.pane-spine-title');
@@ -516,30 +783,6 @@ async function fillPane(pane, id, index, token, { heading, animate }) {
     return;
   }
 
-  const demoView = demoViewForPaneId(id);
-  if (demoView) {
-    article.removeAttribute('aria-busy');
-    backlinks.replaceChildren();
-    backlinks.hidden = true;
-    applyNoteTitle(pane, spineTitle, demoPaneLabel(id), index);
-    if (demo) {
-      // The demo rechecks this token after every await, exactly like a note.
-      await demo.renderPane(pane, demoView, {
-        isCurrent: () => token === renderToken && pane.isConnected,
-      });
-    } else {
-      article.replaceChildren();
-      const message = document.createElement('p');
-      message.className = 'demo-caption';
-      message.textContent = 'The local demo could not start in this browser.';
-      article.append(message);
-    }
-    if (token !== renderToken || !pane.isConnected) return;
-    restorePaneScroll(pane);
-    scheduleGeometry();
-    return;
-  }
-
   try {
     const note = await getNote(id);
     if (token !== renderToken || !pane.isConnected) return;
@@ -560,10 +803,9 @@ async function fillPane(pane, id, index, token, { heading, animate }) {
     restorePaneScroll(pane);
 
     // A canonical `/<note>#heading` URL (cmd-click, reload) should land on the
-    // same heading a normal click would. In-app navigation clears the hash.
-    const fragment = index === state.stack.length - 1 && !heading
-      ? safeDecode(window.location.hash.slice(1))
-      : '';
+    // same heading a normal click would. In-app navigation carries a heading
+    // instead of a fragment.
+    const fragment = index === state.stack.length - 1 && !heading ? hash : '';
     if (heading) scrollToHeading(pane, heading, animate ? scrollBehavior() : 'auto');
     else if (fragment) scrollToHeading(pane, fragment, 'auto');
 
@@ -817,6 +1059,14 @@ function scheduleGeometry() {
  * is enough: if a later pane overlaps, the immediate one already does.
  */
 function updateCovered() {
+  // While an account region is showing, the reading row is hidden: it is not
+  // being read, and every pane reports a zero rectangle. Nothing here may pick
+  // a pane back up behind the account page.
+  if (isAccountView(state.view)) {
+    tracker?.setActiveNote(null);
+    return;
+  }
+
   const panes = state.panes;
   const narrow = narrowLayout.matches;
 
@@ -924,7 +1174,18 @@ function navigateFromPane(index, id, heading) {
 
   const existing = state.stack.indexOf(id);
   if (existing !== -1) {
-    // Already open: reveal it without adding an entry to history.
+    // Already open. From the reader, reveal it without a history entry; from an
+    // account region, come back to the reading stack that already holds it.
+    if (state.view !== VIEW_READER) {
+      if (!writeRouteUrl(state.stack, { view: VIEW_READER, hash: heading ?? '' })) return;
+      enterReaderView({
+        ids: state.stack,
+        hash: heading ?? '',
+        focusElement: true,
+        focusIndex: Math.min(existing, state.stack.length - 1),
+      });
+      return;
+    }
     const pane = state.panes[existing];
     if (pane) {
       centerPane(existing, scrollBehavior());
@@ -937,21 +1198,20 @@ function navigateFromPane(index, id, heading) {
   const safeIndex = state.stack.length
     ? Math.max(0, Math.min(index, state.stack.length - 1))
     : 0;
-  const previous = state.stack;
   const next = state.stack.slice(0, safeIndex + 1);
   next.push(id);
 
-  if (!writeStackUrl(next)) {
+  // Selecting a note always leaves the account region and writes the reading
+  // URL, so Random and Search keep working from User info, Settings and Admin.
+  if (!writeRouteUrl(next, { view: VIEW_READER })) {
     // The browser refused the URL. Put the old stack back rather than showing
     // panes the address bar does not describe.
-    state.stack = previous;
     renderStack({ animate: false });
     announce('That note could not be opened.');
     return;
   }
 
-  state.stack = next;
-  renderStack({ focusElement: true, heading, animate: true });
+  enterReaderView({ ids: next, heading, focusElement: true, animate: true });
 }
 
 /**
@@ -970,7 +1230,7 @@ function closePane(index) {
   const closed = previous[index];
   const next = previous.filter((_, at) => at !== index);
 
-  if (!writeStackUrl(next)) {
+  if (!writeRouteUrl(next, { view: VIEW_READER })) {
     state.stack = previous;
     renderStack({ animate: false });
     announce('That page could not be closed.');
@@ -988,24 +1248,33 @@ function goHome() {
   dismissPreview();
   closeSearch();
 
-  if (state.stack.length === 1 && state.stack[0] === defaultId) {
+  const alreadyHome = state.stack.length === 1 && state.stack[0] === defaultId;
+  const putHomeOnTop = () => {
     const sheet = state.panes[0]?.querySelector('.pane-sheet');
     sheet?.scrollTo({ top: 0, behavior: scrollBehavior() });
     centerPane(0, scrollBehavior());
     state.panes[0]?.focus({ preventScroll: true });
+  };
+
+  if (alreadyHome && state.view === VIEW_READER) {
+    putHomeOnTop();
     return;
   }
 
-  const previous = state.stack;
-  if (!writeStackUrl([defaultId])) {
-    state.stack = previous;
+  if (!writeRouteUrl([defaultId], { view: VIEW_READER })) {
     renderStack({ animate: false });
     announce('That note could not be opened.');
     return;
   }
 
-  state.stack = [defaultId];
-  renderStack({ focusElement: true, animate: true });
+  if (alreadyHome) {
+    // Back from an account view to the home note that is already in the stack.
+    enterReaderView({ ids: [defaultId] });
+    putHomeOnTop();
+    return;
+  }
+
+  enterReaderView({ ids: [defaultId], focusElement: true, animate: true });
 }
 
 function onDocumentClick(event) {
@@ -1027,6 +1296,22 @@ function onDocumentClick(event) {
   if (closable) {
     event.preventDefault();
     closePane(Number(closable.dataset.closeIndex));
+    return;
+  }
+
+  // The account region's own local navigation. Modified and non-primary clicks
+  // already returned above, so those keep the href the browser would follow.
+  const viewLink = event.target.closest('[data-account-view]');
+  if (viewLink) {
+    event.preventDefault();
+    goToView(viewLink.dataset.accountView);
+    return;
+  }
+
+  const backLink = event.target.closest('[data-account-back]');
+  if (backLink) {
+    event.preventDefault();
+    goToReader();
     return;
   }
 
@@ -1059,19 +1344,11 @@ function onDocumentClick(event) {
 }
 
 function onPopState() {
-  if (!state.bootstrap) return;
   dismissPreview();
   closeSearch();
-
-  const located = stackFromUrl();
-  if (located.empty) {
-    state.stack = [];
-    renderEmptyVault();
-    return;
-  }
-
-  state.stack = located.ids;
-  renderStack({ animate: false });
+  // Boot, Back/Forward and URL normalisation all go through one reconciliation,
+  // so the region and the stack can never disagree with the address bar.
+  reconcileRoute();
 }
 
 /* ---------------------------------------------------------------- search --- */
@@ -1376,19 +1653,19 @@ async function drainTrackingWrites() {
   }
 }
 
-function demoViewForPaneId(id) {
-  if (id === DEMO_PANE_ACCOUNT) return 'account';
-  if (id === DEMO_PANE_ADMIN) return 'admin';
-  return null;
+/**
+ * Reading time is paused while a demo dialog owns the screen and while an
+ * account region is showing. The two conditions are combined rather than
+ * layered, so closing a dialog cannot resume tracking behind a hidden reader.
+ */
+function syncTrackingPause() {
+  tracker?.setPaused(Boolean(demo?.hasOpenDialog()) || isAccountView(state.view));
 }
 
-/** Re-render every open demo pane, leaving ordinary note panes untouched. */
-function refreshDemoPanes() {
-  state.panes.forEach((pane, index) => {
-    const id = pane.dataset.noteId;
-    if (!demoViewForPaneId(id)) return;
-    fillPane(pane, id, index, renderToken, { heading: null, animate: false });
-  });
+/** Re-render the account region only when it is the region on screen. */
+function refreshActiveAccountView() {
+  if (!isAccountView(state.view)) return;
+  renderAccountView(state.view, { focus: false });
 }
 
 /**
@@ -1404,7 +1681,9 @@ async function syncDemoSession() {
     trackedAccountId = next;
   }
   tracker?.setSignedIn(Boolean(next));
-  refreshDemoPanes();
+  // Admin navigation is authorized, and the account view shows the session.
+  syncAccountNav(state.view);
+  refreshActiveAccountView();
 }
 
 function initDemo() {
@@ -1428,9 +1707,9 @@ function initDemo() {
   demo = createDemoUi({
     store: demoStore,
     announce,
-    openPane: (id) => navigateFromPane(state.stack.length - 1, id),
+    openView: (view) => goToView(view),
     // Statistics must include the stretch the reader just finished, so settle
-    // the tracker and let its write land before a demo pane reads them.
+    // the tracker and let its write land before a demo view reads them.
     settleTracking: async () => {
       tracker?.settle();
       await drainTrackingWrites();
@@ -1450,7 +1729,7 @@ function initDemo() {
   });
 
   demo.onChange(syncDemoSession);
-  demo.onDialogChange(() => tracker?.setPaused(demo.hasOpenDialog()));
+  demo.onDialogChange(syncTrackingPause);
   tracker.setVisible(document.visibilityState !== 'hidden');
   tracker.start();
 
@@ -1458,29 +1737,13 @@ function initDemo() {
   demo.init().then(syncDemoSession).catch(() => {});
 }
 
+/**
+ * The header's User info entry opens the full-page account region. It is a
+ * region of the same page, not a pane, so it is reachable even when the notes
+ * index failed to load.
+ */
 function openUserInfo() {
-  if (state.ready) {
-    const existing = state.stack.indexOf(DEMO_PANE_ACCOUNT);
-    // On a narrow screen only the last pane is shown. An account pane already
-    // open behind Admin would be centred but never seen, so move it to the end
-    // of the stack through the ordinary URL: Back still returns to the order it
-    // had, and desktop keeps its existing reveal behaviour.
-    if (existing !== -1 && existing !== state.stack.length - 1 && narrowLayout.matches) {
-      const next = [...state.stack.filter((id) => id !== DEMO_PANE_ACCOUNT), DEMO_PANE_ACCOUNT];
-      if (writeStackUrl(next)) {
-        state.stack = next;
-        renderStack({ focusElement: true, animate: true });
-        return;
-      }
-    }
-    navigateFromPane(state.stack.length - 1, DEMO_PANE_ACCOUNT);
-    return;
-  }
-  // The notes index failed to load, but this pane does not depend on it: it can
-  // still explain itself rather than leaving a button that does nothing.
-  if (!writeStackUrl([DEMO_PANE_ACCOUNT])) return;
-  state.stack = [DEMO_PANE_ACCOUNT];
-  renderStack({ animate: false });
+  goToView(VIEW_ACCOUNT);
 }
 
 /* ------------------------------------------------------------- listeners --- */
@@ -1638,7 +1901,7 @@ els.userInfo.addEventListener('click', openUserInfo);
 // instead of leaving the stack scrolled to its leftmost pane.
 narrowLayout.addEventListener('change', (event) => {
   scheduleGeometry();
-  if (event.matches) return;
+  if (event.matches || isAccountView(state.view)) return;
   window.requestAnimationFrame(() => {
     if (!state.panes.length) return;
     scheduleGeometry();
@@ -1707,5 +1970,8 @@ document.addEventListener('mouseout', (event) => {
 });
 
 els.key.textContent = isMac() ? '⌘K' : 'Ctrl K';
+// The inline script in the shell has already applied the saved preset; this
+// re-reads it so the module's in-memory choice matches what is on screen.
+initAppearance();
 boot();
 initDemo();

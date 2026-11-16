@@ -1,5 +1,5 @@
 /*
- * stacked-notes
+ * Vitruvian Institute — the reader.
  *
  * The stack is a single horizontal scroller. Every pane is 625px wide and
  * sticky at `40px * index`, so as the container scrolls successive panes slide
@@ -7,35 +7,128 @@
  * The constants below are the reference values; changing them changes the
  * geometry the client measures at runtime.
  *
- * Every colour is a token on :root. A dark theme is a second token block
- * (for example `[data-theme="dark"]`) that overrides these variables; nothing
- * below hard-codes a page colour.
+ * Every colour is a semantic token on :root, and the three built-in light
+ * appearances below are token overrides and nothing else. Layout, typography
+ * and behaviour are identical in all of them. There is no dark or automatic
+ * mode; the saved preset is applied to <html> before first paint by the inline
+ * script in index.html.
  */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  --bg: #141618;
-  --surface: #1b1e21;
-  --surface-quiet: #202428;
-  --ink: #e6e6e3;
-  --ink-soft: #b9bcbf;
-  --muted: #9b9fa4;
-  --rule: #34393f;
-  --rule-strong: #4b525a;
-  --link: #9bc4ef;
-  --link-hover: #c7e2ff;
-  --focus: #8bbdf2;
+  /* Surfaces and text */
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-quiet: #f3f4f7;
+  --ink: #23262b;
+  --ink-soft: #454b54;
+  --muted: #6a7280;
+  --rule: #e4e6ea;
+  --rule-strong: #c9cdd4;
+
+  /* Links and focus */
+  --link: #1d5fbf;
+  --link-hover: #14458c;
+  --link-underline: rgba(29, 95, 191, 0.35);
+  --focus: #1d5fbf;
+  --focus-ring: rgba(29, 95, 191, 0.16);
+
+  /* Actions: primary, secondary and destructive stay visually distinct */
+  --primary: #1d5fbf;
+  --primary-hover: #164e9e;
+  --on-primary: #ffffff;
+  --danger: #a3312f;
+  --danger-hover: #7f2624;
+  --danger-quiet: rgba(163, 49, 47, 0.08);
+
+  /* Fills that used to be hard-coded dark */
+  --selection: #e2ecfb;
+  --hover-fill: rgba(24, 32, 44, 0.06);
+  --code-bg: #f0f2f6;
+  --code-ink: #2a2f36;
+  --pre-bg: #f6f7f9;
+  --evidence-bg: #f7f8fa;
+  --design-frame: #ececea;
+  --design-canvas: #e7e6e2;
+
+  /* Status labels */
+  --status-verified: #1f6b3a;
+  --status-changes: #8a5a12;
+
+  /* Shadows: fine and light, never a dark plate */
+  --shadow-covered: 0 0 18px 3px rgba(24, 32, 44, 0.1);
+  --shadow-pop: 0 10px 28px rgba(24, 32, 44, 0.12);
+  --shadow-dialog: 0 20px 50px rgba(24, 32, 44, 0.22);
+  --dialog-backdrop: rgba(23, 27, 33, 0.38);
+
+  /* Modest radii */
+  --radius-sm: 3px;
+  --radius: 5px;
+  --radius-lg: 8px;
 
   --header-height: 48px;
   --pane-width: 625px;
   --pane-reveal: 40px;
   --spine-width: 40px;
-  --shadow-covered: 0 0 20px 4px rgba(0, 0, 0, 0.45);
 
-  --font-reading: ui-serif, Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-reading: var(--font-ui);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Paper — warm off-white surfaces, the same blue links. */
+:root[data-appearance="paper"] {
+  --bg: #f6f1e8;
+  --surface: #fffcf6;
+  --surface-quiet: #f2ebdf;
+  --ink: #2c2820;
+  --ink-soft: #4c463b;
+  --muted: #6f6759;
+  --rule: #e4dccd;
+  --rule-strong: #cbbfa9;
+  --link: #1d5a9e;
+  --link-hover: #143f72;
+  --link-underline: rgba(29, 90, 158, 0.35);
+  --focus: #1d5a9e;
+  --focus-ring: rgba(29, 90, 158, 0.16);
+  --primary: #1d5a9e;
+  --primary-hover: #164974;
+  --selection: #e6eef8;
+  --hover-fill: rgba(44, 40, 32, 0.07);
+  --code-bg: #f1e9db;
+  --code-ink: #33302a;
+  --pre-bg: #f8f3ea;
+  --evidence-bg: #f8f3ea;
+  --status-verified: #2c6338;
+  --status-changes: #8a5a12;
+}
+
+/* Soft Lilac — neutral light surfaces with restrained violet accents. */
+:root[data-appearance="lilac"] {
+  --bg: #f6f5fa;
+  --surface: #ffffff;
+  --surface-quiet: #f1eff8;
+  --ink: #24222c;
+  --ink-soft: #484456;
+  --muted: #6c6880;
+  --rule: #e4e1ee;
+  --rule-strong: #c8c3da;
+  --link: #5b46b8;
+  --link-hover: #463397;
+  --link-underline: rgba(91, 70, 184, 0.35);
+  --focus: #5b46b8;
+  --focus-ring: rgba(91, 70, 184, 0.16);
+  --primary: #5b46b8;
+  --primary-hover: #463397;
+  --selection: #ebe7fa;
+  --hover-fill: rgba(36, 34, 44, 0.06);
+  --code-bg: #f0eef8;
+  --code-ink: #2b2836;
+  --pre-bg: #f6f5fb;
+  --evidence-bg: #f7f6fc;
+  --status-verified: #2b6344;
+  --status-changes: #85521a;
 }
 
 *,
@@ -179,9 +272,9 @@ input {
   width: clamp(96px, 18vw, 190px);
   height: 30px;
   padding: 0 44px 0 10px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--surface-quiet);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
   font-size: 13px;
 }
 
@@ -190,10 +283,10 @@ input {
 }
 
 .search-input:focus {
-  border-color: var(--rule-strong);
+  border-color: var(--link);
   outline: none;
-  background: var(--bg);
-  box-shadow: 0 0 0 2px rgba(42, 110, 179, 0.12);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .search-input:disabled {
@@ -206,8 +299,8 @@ input {
   right: 8px;
   padding: 1px 4px;
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  background: var(--bg);
+  border-radius: var(--radius-sm);
+  background: var(--surface-quiet);
   color: var(--muted);
   font-family: var(--font-ui);
   font-size: 11px;
@@ -225,10 +318,10 @@ input {
   width: min(380px, calc(100vw - 32px));
   max-height: min(60vh, 420px);
   padding: 6px;
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  background: var(--bg);
-  box-shadow: 0 12px 32px rgba(20, 20, 20, 0.14);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
 }
 
 .search-result {
@@ -247,7 +340,7 @@ input {
 }
 
 .search-result.is-active {
-  background: #293b4d;
+  background: var(--selection);
 }
 
 .search-result-title {
@@ -310,7 +403,12 @@ input {
   left: calc(var(--pane-reveal) * var(--index, 0));
   /* 625 - 40: the reference sets the right offset as well as the left. */
   right: -585px;
+  border-left: 1px solid var(--rule);
   background: var(--surface);
+}
+
+.pane:first-child {
+  border-left-color: transparent;
 }
 
 .pane.is-overlapped {
@@ -349,7 +447,7 @@ input {
 }
 
 .pane-close:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--hover-fill);
   color: var(--ink);
 }
 
@@ -436,8 +534,9 @@ input {
 .note-content h3,
 .note-content h4 {
   margin: 1.5em 0 0.55em;
-  /* Headings are sans and text is serif, as on the reference site: the heading
-     reads as a label for the note, the body as the note itself. */
+  /* Headings are slightly heavier and tighter than the body, which is the same
+     system sans stack: the heading reads as a label for the note, the body as
+     the note itself. */
   font-family: var(--font-ui);
   font-weight: 600;
   line-height: 1.22;
@@ -509,7 +608,7 @@ input {
 
 .note-content a {
   color: var(--link);
-  text-decoration-color: rgba(155, 196, 239, 0.45);
+  text-decoration-color: var(--link-underline);
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
@@ -529,8 +628,9 @@ input {
 
 .note-content code {
   padding: 0.12em 0.3em;
-  border-radius: 3px;
-  background: #292e33;
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
+  color: var(--code-ink);
   font-family: var(--font-mono);
   font-size: 0.86em;
 }
@@ -539,8 +639,8 @@ input {
   overflow-x: auto;
   padding: 14px 16px;
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  background: #171a1d;
+  border-radius: var(--radius);
+  background: var(--pre-bg);
   font-size: 13.5px;
   line-height: 1.5;
 }
@@ -745,8 +845,8 @@ input {
 /* A mounted prototype opens as its own stack pane. It retains its desktop
    viewport and is scaled to the pane instead of reflowing into a phone layout. */
 .pane:has(.design-pane-viewport) { flex-basis: 920px; width: 920px; }
-.design-pane-viewport { overflow: hidden; width: 100%; border: 1px solid var(--rule); border-radius: 6px; }
-.design-pane-viewport iframe { display: block; width: 1180px; height: 780px; border: 0; transform-origin: top left; background: #131314; }
+.design-pane-viewport { overflow: hidden; width: 100%; border: 1px solid var(--rule); border-radius: var(--radius-lg); }
+.design-pane-viewport iframe { display: block; width: 1180px; height: 780px; border: 0; transform-origin: top left; background: var(--design-frame); }
 
 /* Opt-in canvas profile: the viewer manages its own scale. Ordinary design
    panes retain the existing desktop-preview sizing and behavior. */
@@ -756,7 +856,7 @@ input {
 }
 .pane.is-design-canvas .pane-sheet { padding: 38px 16px 16px; }
 .design-pane-viewport.is-canvas { height: max(460px, calc(100dvh - 126px)); }
-.design-pane-viewport.is-canvas iframe { width: 100%; height: 100%; background: #e7e6e2; }
+.design-pane-viewport.is-canvas iframe { width: 100%; height: 100%; background: var(--design-canvas); }
 @media (max-width: 800px) {
   .pane.is-design-canvas:has(.design-pane-viewport) { flex-basis: 100%; width: 100%; }
   .pane.is-design-canvas .pane-sheet { padding: 34px 6px 6px; }
@@ -770,10 +870,10 @@ input {
   overflow: hidden;
   width: 500px;
   height: 400px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--bg);
-  box-shadow: 0 14px 40px rgba(20, 20, 20, 0.18);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
   pointer-events: none;
 }
 
@@ -1021,9 +1121,9 @@ input {
   width: 100%;
   min-height: 32px;
   padding: 6px 9px;
-  border: 1px solid var(--rule);
-  border-radius: 5px;
-  background: var(--bg);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: 13.5px;
@@ -1037,14 +1137,14 @@ input {
 
 .note-content .demo-control:focus,
 .demo-dialog .demo-control:focus {
-  border-color: var(--rule-strong);
+  border-color: var(--link);
   outline: none;
-  box-shadow: 0 0 0 2px rgba(42, 110, 179, 0.14);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .note-content .demo-control[aria-invalid="true"],
 .demo-dialog .demo-control[aria-invalid="true"] {
-  border-color: #b4656a;
+  border-color: var(--danger);
 }
 
 .demo-dialog input[type="file"].demo-control {
@@ -1056,9 +1156,9 @@ input {
   margin-right: 8px;
   padding: 4px 9px;
   border: 1px solid var(--rule-strong);
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--surface-quiet);
-  color: var(--ink-soft);
+  color: var(--ink);
   font: inherit;
   cursor: pointer;
 }
@@ -1073,7 +1173,7 @@ input {
 .note-content .demo-error,
 .demo-dialog .demo-error {
   margin: 5px 0 0;
-  color: #e6a3a7;
+  color: var(--danger);
   font-size: 12.5px;
   line-height: 1.5;
 }
@@ -1087,13 +1187,14 @@ input {
   margin-top: 0.9em;
 }
 
+/* Secondary by default: a quiet outlined control. */
 .note-content .demo-button,
 .demo-dialog .demo-button {
   padding: 6px 11px;
   border: 1px solid var(--rule-strong);
-  border-radius: 5px;
-  background: var(--surface-quiet);
-  color: var(--ink-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
   font-family: var(--font-ui);
   font-size: 13px;
   line-height: 1.2;
@@ -1102,8 +1203,8 @@ input {
 
 .note-content .demo-button:hover,
 .demo-dialog .demo-button:hover {
-  border-color: var(--ink-soft);
-  background: var(--bg);
+  border-color: var(--muted);
+  background: var(--surface-quiet);
   color: var(--ink);
 }
 
@@ -1113,17 +1214,34 @@ input {
   cursor: default;
 }
 
+/* One primary action at a time, filled and unmistakable. */
 .note-content .demo-button.demo-button-primary,
 .demo-dialog .demo-button.demo-button-primary {
-  border-color: #3f6d9c;
-  background: #22344a;
-  color: var(--ink);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.note-content .demo-button.demo-button-primary:hover,
+.demo-dialog .demo-button.demo-button-primary:hover {
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
+  color: var(--on-primary);
+}
+
+/* Destructive: outlined at rest, red on hover, never the loudest thing here. */
+.note-content .demo-button.demo-button-danger,
+.demo-dialog .demo-button.demo-button-danger {
+  border-color: var(--danger);
+  background: var(--surface);
+  color: var(--danger);
 }
 
 .note-content .demo-button.demo-button-danger:hover,
 .demo-dialog .demo-button.demo-button-danger:hover {
-  border-color: #b4656a;
-  color: #f0c3c6;
+  border-color: var(--danger-hover);
+  background: var(--danger-quiet);
+  color: var(--danger-hover);
 }
 
 .note-content .demo-button.demo-button-small,
@@ -1149,9 +1267,9 @@ input {
 .note-content .demo-code-value,
 .demo-dialog .demo-code-value {
   padding: 1px 6px;
-  border-radius: 3px;
-  background: #292e33;
-  color: var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
+  color: var(--code-ink);
   font-family: var(--font-mono);
   font-size: 13.5px;
   letter-spacing: 0.08em;
@@ -1216,13 +1334,13 @@ input {
 }
 
 .note-content .demo-status-verified {
-  border-color: #4b7a5c;
-  color: #a9d6b6;
+  border-color: var(--status-verified);
+  color: var(--status-verified);
 }
 
 .note-content .demo-status-changes_requested {
-  border-color: #8a6a3c;
-  color: #e3c48f;
+  border-color: var(--status-changes);
+  color: var(--status-changes);
 }
 
 .note-content .demo-status-plain {
@@ -1241,7 +1359,7 @@ input {
 .note-content .demo-feedback {
   margin: 0.7em 0 0;
   padding-left: 10px;
-  border-left: 2px solid #8a6a3c;
+  border-left: 2px solid var(--status-changes);
   color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.55;
@@ -1286,8 +1404,8 @@ input {
   max-width: 100%;
   max-height: 260px;
   margin-top: 8px;
-  border-radius: 3px;
-  background: #0f1113;
+  border-radius: var(--radius-sm);
+  background: var(--evidence-bg);
 }
 
 .note-content .demo-evidence-download {
@@ -1412,16 +1530,16 @@ input {
   overflow-y: auto;
   padding: 20px 22px 22px;
   border: 1px solid var(--rule-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: 14px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-dialog);
 }
 
 .demo-dialog::backdrop {
-  background: rgba(8, 9, 10, 0.6);
+  background: var(--dialog-backdrop);
 }
 
 .demo-dialog-title {
@@ -1500,7 +1618,7 @@ input {
      opens on focus, exactly as it does on a phone today. Measured with the
      browser suite at 430, 390 and 360px. */
   .app-title {
-    max-width: 12vw;
+    max-width: 15vw;
     font-size: 13.5px;
   }
 
@@ -1535,5 +1653,117 @@ input {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* --------------------------------------------------------- account region ---
+
+   The account region is a whole page beside the reader, not a pane: no spine,
+   no close control and no horizontal geometry. Only one main region is exposed
+   at a time, so the reader's own DOM — and with it the horizontal position and
+   every note's scroll offset — survives a visit here. */
+
+.account {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--bg);
+  overscroll-behavior: contain;
+  scrollbar-color: var(--rule-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.account-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 26px 28px 88px;
+}
+
+.account-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+  margin-bottom: 26px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.account-nav-back {
+  padding: 5px 11px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.account-nav-back:hover {
+  border-color: var(--muted);
+  background: var(--surface-quiet);
+}
+
+.account-nav-link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.account-nav-link:hover,
+.account-nav-link:focus-visible {
+  color: var(--link-hover);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.account-nav-link[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* Wider and quieter than a note pane: this is a page, not a reading column. */
+.account-content {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  font-size: 15px;
+}
+
+.account-content:focus {
+  outline: none;
+}
+
+.account-content:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--focus);
+  outline-offset: 6px;
+}
+
+@media (max-width: 800px) {
+  .account-inner {
+    padding: 20px 18px 72px;
+  }
+
+  .account-nav {
+    gap: 6px 14px;
+    margin-bottom: 20px;
+  }
+}
+
+@media (max-width: 430px) {
+  .account-inner {
+    padding: 16px 14px 64px;
+  }
+
+  .account-nav {
+    gap: 6px 12px;
+    font-size: 12.5px;
+  }
+
+  .account-nav-back {
+    padding: 5px 9px;
   }
 }
