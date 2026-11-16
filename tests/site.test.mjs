@@ -241,7 +241,10 @@ test('the header exposes exactly one User info entry, a dialog host and one acco
   assert.match(html, /<nav class="account-nav" aria-label="Account views">/);
   assert.match(html, /data-account-view="settings"[^>]*>Settings</);
   assert.match(html, /data-account-view="admin"[^>]*hidden>Admin</);
-  assert.match(html, /data-account-back[^>]*>Return to notes</);
+  assert.match(html, /data-account-back[^>]*><span aria-hidden="true">←<\/span> Return to notes<\/a>/);
+  const accountNav = html.match(/<nav class="account-nav"[\s\S]*?<\/nav>/)?.[0];
+  assert.ok(accountNav);
+  assert.doesNotMatch(accountNav, /data-account-back/);
   // The account region has no spine and no pane-close control.
   const account = html.slice(html.indexOf('id="account"'), html.indexOf('id="preview"'));
   assert.doesNotMatch(account, /pane-spine|pane-close|class="pane"/);

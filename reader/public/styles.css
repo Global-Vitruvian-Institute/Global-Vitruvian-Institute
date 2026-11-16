@@ -1680,6 +1680,12 @@ input {
   padding: 26px 28px 88px;
 }
 
+.account-return {
+  margin-bottom: 22px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
 .account-nav {
   display: flex;
   flex-wrap: wrap;
@@ -1693,6 +1699,10 @@ input {
 }
 
 .account-nav-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
   padding: 5px 11px;
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
@@ -1707,6 +1717,8 @@ input {
 }
 
 .account-nav-link {
+  padding: 9px 2px;
+  border-bottom: 2px solid transparent;
   color: var(--link);
   text-decoration: none;
 }
@@ -1719,6 +1731,7 @@ input {
 }
 
 .account-nav-link[aria-current="page"] {
+  border-bottom-color: var(--link);
   color: var(--ink);
   font-weight: 600;
   text-decoration: none;
