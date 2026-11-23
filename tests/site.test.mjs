@@ -242,11 +242,14 @@ test('the demo is additive: it decorates rendered notes and cannot block them', 
   assert.match(app, /demo\?\.releasePane\(els\.accountContent\);/);
 });
 
-test('the header exposes exactly one User info entry, a dialog host and one account region', async () => {
+test('the header exposes exactly one account entry, a dialog host and one account region', async () => {
   const html = await readFile('reader/public/index.html', 'utf8');
   assert.equal((html.match(/<button[^>]*user-info-button/g) ?? []).length, 1);
   assert.match(html, /id="user-info-button"/);
-  assert.match(html, />User info<\/button>/);
+  assert.match(html, />Log in<\/button>/);
+  const app = await readFile('reader/public/app.js', 'utf8');
+  assert.match(app, /els\.userInfo\.textContent = 'Log in';/);
+  assert.match(app, /els\.userInfo\.textContent = name;/);
   assert.match(html, /id="demo-dialog-host"/);
   // No new global navigation item was introduced for the admin view.
   assert.doesNotMatch(html, /id="admin-link"/);

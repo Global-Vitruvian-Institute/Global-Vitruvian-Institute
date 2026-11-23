@@ -28,7 +28,20 @@ the GitHub integration can apply future migrations on a push to `main`.
 
 Baseline the migrations already applied by hand **once**, in the SQL editor:
 
+The history table does not exist until the CLI or integration first runs. Create it,
+then record the manual migrations:
+
 ```sql
+create schema if not exists supabase_migrations;
+
+create table if not exists supabase_migrations.schema_migrations (
+  version text primary key,
+  statements text[] not null default '{}',
+  name text,
+  created_by text,
+  idempotency_key text
+);
+
 insert into supabase_migrations.schema_migrations (version, name) values
   ('20261122000001', 'initial'),
   ('20261122000002', 'reading_stats'),

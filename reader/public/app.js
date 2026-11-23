@@ -529,6 +529,24 @@ function scrollLastPaneToHash(hash) {
 /** A per-visit token, so a slow render cannot commit over a newer region. */
 let accountRenderToken = 0;
 
+/**
+ * The header entry is an action when signed out and an identity when signed in.
+ * Keep the full address in the tooltip rather than in the chrome.
+ */
+function syncAccountLabel() {
+  const account = demo?.session ?? null;
+  if (!account) {
+    els.userInfo.textContent = 'Log in';
+    els.userInfo.title = 'Sign in to keep a portfolio';
+    els.userInfo.setAttribute('aria-label', 'Log in');
+    return;
+  }
+  const name = account.displayName?.trim() || String(account.email || '').split('@')[0] || 'Account';
+  els.userInfo.textContent = name;
+  els.userInfo.title = account.email || name;
+  els.userInfo.setAttribute('aria-label', `Account: ${account.email || name}`);
+}
+
 function syncAccountNav(view) {
   const hash = state.routeHash ?? '';
   els.accountBack.href = stackHref(state.stack, { view: VIEW_READER, hash });
@@ -1720,6 +1738,7 @@ async function syncDemoSession() {
   }
   tracker?.setSignedIn(Boolean(next));
   // Admin navigation is authorized, and the account view shows the session.
+  syncAccountLabel();
   syncAccountNav(state.view);
   refreshActiveAccountView();
 }
@@ -2029,6 +2048,7 @@ document.addEventListener('mouseout', (event) => {
 });
 
 els.key.textContent = isMac() ? '⌘K' : 'Ctrl K';
+syncAccountLabel();
 // The inline script in the shell has already applied the saved preset; this
 // re-reads it so the module's in-memory choice matches what is on screen.
 initAppearance();
