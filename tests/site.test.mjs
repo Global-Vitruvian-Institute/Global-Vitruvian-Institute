@@ -154,7 +154,7 @@ test('the shell applies the saved appearance before first paint, in step with ap
   assert.match(html, new RegExp(`localStorage\\.getItem\\('${key}'\\)`));
 
   const ids = [...appearance.matchAll(/^ {4}id: '([a-z-]+)',$/gm)].map((match) => match[1]);
-  assert.deepEqual(ids, ['clear', 'paper', 'lilac', 'minimal', 'things', 'blue-topaz']);
+  assert.deepEqual(ids, ['clear', 'paper', 'lilac', 'minimal', 'things', 'blue-topaz', 'dark', 'khan', 'editorial']);
   for (const id of ids) {
     assert.match(html, new RegExp(`'${id}'`), `the shell must accept the ${id} template`);
     assert.ok(existsSync(`reader/public/themes/${id}.css`), `themes/${id}.css must exist`);
@@ -287,7 +287,7 @@ test('demo styling is namespaced, reuses the reader tokens and stays light', asy
 
   // The base stylesheet holds one default token block; templates are files.
   assert.equal((css.match(/:root\[data-appearance=/g) ?? []).length, 0);
-  for (const id of ['paper', 'lilac', 'minimal', 'things', 'blue-topaz']) {
+  for (const id of ['paper', 'lilac', 'minimal', 'things', 'blue-topaz', 'dark', 'khan', 'editorial']) {
     const theme = await readFile(`reader/public/themes/${id}.css`, 'utf8');
     assert.match(theme, new RegExp(`:root\\[data-appearance="${id}"\\]`));
     assert.doesNotMatch(theme, /prefers-color-scheme:\s*dark/);

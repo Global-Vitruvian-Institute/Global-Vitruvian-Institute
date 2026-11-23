@@ -59,8 +59,8 @@ function throwingStorage() {
   };
 }
 
-test('there are six built-in light templates, and clear is the default', () => {
-  assert.deepEqual(APPEARANCES.map((preset) => preset.id), ['clear', 'paper', 'lilac', 'minimal', 'things', 'blue-topaz']);
+test('there are nine built-in templates, and clear is the default', () => {
+  assert.deepEqual(APPEARANCES.map((preset) => preset.id), ['clear', 'paper', 'lilac', 'minimal', 'things', 'blue-topaz', 'dark', 'khan', 'editorial']);
   assert.equal(APPEARANCE_DEFAULT, 'clear');
   assert.equal(APPEARANCE_ATTRIBUTE, 'data-appearance');
   assert.equal(APPEARANCE_KEY, 'vitruvian.appearance');
@@ -77,7 +77,7 @@ test('only an exact known id is accepted; everything else is the default', () =>
     assert.equal(isAppearanceId(preset.id), true);
     assert.equal(normalizeAppearanceId(preset.id), preset.id);
   }
-  for (const value of [null, undefined, '', 'CLEAR', 'dark', 'Clear ', 0, {}, [], 'paper\n']) {
+  for (const value of [null, undefined, '', 'CLEAR', 'noir', 'Clear ', 0, {}, [], 'paper\n']) {
     assert.equal(isAppearanceId(value), false, `${JSON.stringify(value)} is not a preset`);
     assert.equal(normalizeAppearanceId(value), APPEARANCE_DEFAULT);
   }
@@ -90,7 +90,7 @@ test('a stored preference is read back, and junk is ignored', () => {
   assert.equal(readStoredAppearance(fakeStorage({ [APPEARANCE_KEY]: 'paper' })), 'paper');
   assert.equal(readStoredAppearance(fakeStorage()), APPEARANCE_DEFAULT);
   // A value someone edited by hand must not reach the stylesheet.
-  assert.equal(readStoredAppearance(fakeStorage({ [APPEARANCE_KEY]: 'dark' })), APPEARANCE_DEFAULT);
+  assert.equal(readStoredAppearance(fakeStorage({ [APPEARANCE_KEY]: 'noir' })), APPEARANCE_DEFAULT);
   assert.equal(readStoredAppearance(fakeStorage({ [APPEARANCE_KEY]: '' })), APPEARANCE_DEFAULT);
   assert.equal(readStoredAppearance(null), APPEARANCE_DEFAULT);
 });
@@ -116,7 +116,7 @@ test('a preference is persisted only when the browser allows it', () => {
   assert.equal(readStoredAppearance(storage), 'paper');
 
   // An unknown id is never written, so a bad caller cannot poison the key.
-  assert.equal(writeStoredAppearance('dark', storage), false);
+  assert.equal(writeStoredAppearance('noir', storage), false);
   assert.equal(storage.data[APPEARANCE_KEY], 'paper');
 
   assert.equal(writeStoredAppearance('paper', null), false);
@@ -131,7 +131,7 @@ test('applying a preset puts it on the root element and remembers it in memory',
   assert.equal(currentAppearance(), 'paper');
 
   // An unknown id applies the default rather than writing junk.
-  assert.equal(applyAppearance('dark', root), APPEARANCE_DEFAULT);
+  assert.equal(applyAppearance('noir', root), APPEARANCE_DEFAULT);
   assert.equal(root.attributes[APPEARANCE_ATTRIBUTE], APPEARANCE_DEFAULT);
 
   // A root that refuses attributes still leaves the in-memory choice.

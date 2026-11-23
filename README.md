@@ -70,8 +70,11 @@ The account views are a **separate full page**, not a pane in the reading stack:
 - **Paper** — warm off-white surfaces with the same blue links.
 - **Soft Lilac** — neutral light surfaces with restrained violet accents.
 - **Minimal**, **Things**, **Blue Topaz** — palettes adapted from MIT-licensed Obsidian themes.
+- **Dark** — charcoal surfaces with soft blue links.
+- **Academy** — bright white and high-clarity blue, after Khan Academy reading colours.
+- **Editorial** — cream paper, oxblood links and a serif reading face.
 
-They change colour tokens only: layout, typography and behaviour are identical, and there is no dark or automatic mode. The choice is stored in this browser's `localStorage` (one key, `vitruvian.appearance`) and applied before first paint; if the browser refuses storage, the preset still applies for the visit and the page says so.
+Most change colour tokens only. Editorial also switches the reading face to serif. There is no automatic OS theme switch. The choice is stored in this browser's `localStorage` (one key, `vitruvian.appearance`) and applied before first paint; if the browser refuses storage, the preset still applies for the visit and the page says so.
 
 ## Tests
 

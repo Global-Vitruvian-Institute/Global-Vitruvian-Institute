@@ -1,0 +1,41 @@
+/*
+ * Dark — charcoal surfaces, warm off-white text, cool blue links.
+ * The reader's only dark template.
+ */
+:root[data-appearance="dark"] {
+  color-scheme: dark;
+
+  --bg: #14171a;
+  --surface: #1b1f23;
+  --surface-quiet: #22272c;
+  --ink: #e8e6e1;
+  --ink-soft: #c3c0ba;
+  --muted: #9aa0a6;
+  --rule: #30363c;
+  --rule-strong: #4a545e;
+  --link: #8ab4f8;
+  --link-hover: #b6d2ff;
+  --link-underline: rgba(138, 180, 248, 0.4);
+  --focus: #8ab4f8;
+  --focus-ring: rgba(138, 180, 248, 0.22);
+  --primary: #8ab4f8;
+  --primary-hover: #a9c7fb;
+  --on-primary: #10161d;
+  --danger: #f2a09d;
+  --danger-hover: #ffc0bd;
+  --danger-quiet: rgba(242, 160, 157, 0.14);
+  --selection: #2c3b4d;
+  --hover-fill: rgba(255, 255, 255, 0.07);
+  --code-bg: #242a30;
+  --code-ink: #e5e2dc;
+  --pre-bg: #20262b;
+  --evidence-bg: #20262b;
+  --design-frame: #101315;
+  --design-canvas: #22272c;
+  --status-verified: #81c995;
+  --status-changes: #fdd663;
+  --shadow-covered: 0 0 22px 4px rgba(0, 0, 0, 0.55);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --dialog-backdrop: rgba(0, 0, 0, 0.6);
+}

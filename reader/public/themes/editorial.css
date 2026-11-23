@@ -1,0 +1,33 @@
+/*
+ * Editorial — cream paper, oxblood links and a serif reading face. The most
+ * stylised template; layout and behaviour stay identical.
+ */
+:root[data-appearance="editorial"] {
+  --bg: #efe7d8;
+  --surface: #fbf7ee;
+  --surface-quiet: #f3ebdc;
+  --ink: #241b13;
+  --ink-soft: #4d3d2d;
+  --muted: #7b6a56;
+  --rule: #ddcfb9;
+  --rule-strong: #c3b096;
+  --link: #8c2f1f;
+  --link-hover: #651f13;
+  --link-underline: rgba(140, 47, 31, 0.35);
+  --focus: #8c2f1f;
+  --focus-ring: rgba(140, 47, 31, 0.18);
+  --primary: #8c2f1f;
+  --primary-hover: #651f13;
+  --selection: #ecd7c4;
+  --hover-fill: rgba(36, 27, 19, 0.07);
+  --code-bg: #f0e5d3;
+  --code-ink: #37291c;
+  --pre-bg: #f6efe2;
+  --evidence-bg: #f7f0e4;
+  --status-verified: #35633a;
+  --status-changes: #8a5310;
+  --font-reading: Georgia, "Times New Roman", serif;
+  --radius-sm: 0px;
+  --radius: 0px;
+  --radius-lg: 0px;
+}

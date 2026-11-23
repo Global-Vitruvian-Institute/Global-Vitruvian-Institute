@@ -56,6 +56,21 @@ export const APPEARANCES = Object.freeze([
     label: 'Blue Topaz',
     description: 'Adapted from Blue Topaz: crisp white surfaces and saturated blue links.',
   }),
+  Object.freeze({
+    id: 'dark',
+    label: 'Dark',
+    description: 'Charcoal surfaces, warm off-white text and soft blue links.',
+  }),
+  Object.freeze({
+    id: 'khan',
+    label: 'Academy',
+    description: 'Bright white and high-clarity blue, after Khan Academy reading colours.',
+  }),
+  Object.freeze({
+    id: 'editorial',
+    label: 'Editorial',
+    description: 'Cream paper, oxblood links and a serif reading face.',
+  }),
 ]);
 
 export const APPEARANCE_ATTRIBUTE_LINK = 'theme-stylesheet';

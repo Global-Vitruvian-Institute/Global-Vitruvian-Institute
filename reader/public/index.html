@@ -18,7 +18,7 @@
       (function () {
         try {
           var saved = window.localStorage.getItem('vitruvian.appearance');
-          if (saved !== 'clear' && saved !== 'paper' && saved !== 'lilac' && saved !== 'minimal' && saved !== 'things' && saved !== 'blue-topaz') saved = 'clear';
+          if (saved !== 'clear' && saved !== 'paper' && saved !== 'lilac' && saved !== 'minimal' && saved !== 'things' && saved !== 'blue-topaz' && saved !== 'dark' && saved !== 'khan' && saved !== 'editorial') saved = 'clear';
           document.documentElement.setAttribute('data-appearance', saved);
           var theme = document.createElement('link');
           theme.rel = 'stylesheet';
