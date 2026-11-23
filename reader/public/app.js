@@ -43,7 +43,6 @@ const VIEW_TITLES = Object.freeze({
 
 const els = {
   title: document.getElementById('app-title'),
-  about: document.getElementById('about-link'),
   random: document.getElementById('random-button'),
   form: document.getElementById('search-form'),
   input: document.getElementById('search-input'),
@@ -60,6 +59,7 @@ const els = {
   previewContent: document.getElementById('preview-content'),
   status: document.getElementById('status'),
   userInfo: document.getElementById('user-info-button'),
+  login: document.getElementById('login-link'),
 };
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -402,15 +402,9 @@ async function boot() {
 
 function applyChrome(bootstrap) {
   els.title.textContent = appTitle();
+  els.title.title = 'About these notes';
+  els.title.setAttribute('aria-label', `${appTitle()} — about these notes`);
   document.title = appTitle();
-
-  if (bootstrap.aboutNoteId) {
-    els.about.href = noteHref(bootstrap.aboutNoteId);
-    els.about.dataset.noteId = bootstrap.aboutNoteId;
-    els.about.hidden = false;
-  } else {
-    els.about.hidden = true;
-  }
 
   els.random.hidden = bootstrap.features?.random === false;
   const searchEnabled = bootstrap.features?.search !== false;
@@ -530,21 +524,16 @@ function scrollLastPaneToHash(hash) {
 let accountRenderToken = 0;
 
 /**
- * The header entry is an action when signed out and an identity when signed in.
- * Keep the full address in the tooltip rather than in the chrome.
+ * One quiet entry to the account page. The page itself carries the session,
+ * portfolio and settings; the header does not try to be an identity badge.
  */
 function syncAccountLabel() {
-  const account = demo?.session ?? null;
-  if (!account) {
-    els.userInfo.textContent = 'Log in';
-    els.userInfo.title = 'Sign in to keep a portfolio';
-    els.userInfo.setAttribute('aria-label', 'Log in');
-    return;
-  }
-  const name = account.displayName?.trim() || String(account.email || '').split('@')[0] || 'Account';
-  els.userInfo.textContent = name;
-  els.userInfo.title = account.email || name;
-  els.userInfo.setAttribute('aria-label', `Account: ${account.email || name}`);
+  const signedIn = Boolean(demo?.session);
+  els.userInfo.textContent = 'Settings';
+  els.userInfo.title = 'Account and settings';
+  els.userInfo.setAttribute('aria-label', 'Account and settings');
+  // A guest gets one extra, quiet way in. The account page is the same page.
+  els.login.hidden = signedIn;
 }
 
 function syncAccountNav(view) {
@@ -1839,6 +1828,11 @@ els.title.addEventListener('click', (event) => {
     return;
   }
   event.preventDefault();
+  const aboutId = state.bootstrap?.aboutNoteId;
+  if (state.ready && aboutId) {
+    navigateFromPane(state.stack.length - 1, aboutId, null);
+    return;
+  }
   goHome();
 });
 
@@ -1973,6 +1967,7 @@ for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
 }
 
 els.userInfo.addEventListener('click', openUserInfo);
+els.login.addEventListener('click', openUserInfo);
 
 // Crossing the breakpoint changes which sheets have a box at all. Widening
 // gives the row horizontal geometry back, so put the newest pane in view

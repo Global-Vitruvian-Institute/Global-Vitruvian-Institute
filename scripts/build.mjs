@@ -41,7 +41,7 @@ const title = 'Vitruvian Institute';
 await writeFile(resolve(out, 'notes.json'), JSON.stringify({
   bootstrap: {
     app: { title }, vault: { name: title, notes: vault.notes.size, warnings: [] },
-    defaultNoteId: 'Base Note', aboutNoteId: 'Base Note',
+    defaultNoteId: 'Base Note', aboutNoteId: 'Orientation',
     features: { search: true, random: true, preview: true },
   }, notes,
 }));

@@ -191,6 +191,7 @@ input {
   white-space: nowrap;
 }
 
+.header-link,
 .header-button {
   cursor: pointer;
 }
