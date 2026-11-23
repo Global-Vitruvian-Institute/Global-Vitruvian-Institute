@@ -1,4 +1,12 @@
-Welcome to Vitruvian. We gonna teach you the following:
+# Vitruvian
+
+A short guide to five subjects and four practices you can try today.
+
+## Start here
+
+New to the guide? Read [[Orientation]]. It explains the loop and gives you a first prompt.
+
+## Read a subject
 
 - [[Physical wellness]] (move no think)
 - [[Mental Health]] (feel think)
@@ -6,4 +14,9 @@ Welcome to Vitruvian. We gonna teach you the following:
 - [[financial wellness]] (money think)
 - [[social skills]] (people think)
 
-See [[Orientation]] for how this guide is arranged, and [[Activities]] for the activity notes.
+## Try an activity
+
+- [[Reflection]] — five minutes of writing about what you want.
+- [[Breath]] — five minutes of attention on the breath.
+
+The other two are listed in [[Activities]].

@@ -400,13 +400,28 @@ async function boot() {
   reconcileRoute();
 }
 
+const RANDOM_KEY = 'vitruvian.random';
+
+function randomPreferred() {
+  try {
+    return localStorage.getItem(RANDOM_KEY) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+/** Random is an opt-in extra, not part of the default header. */
+function syncRandom() {
+  els.random.hidden = state.bootstrap?.features?.random === false || !randomPreferred();
+}
+
 function applyChrome(bootstrap) {
   els.title.textContent = appTitle();
   els.title.title = 'About these notes';
   els.title.setAttribute('aria-label', `${appTitle()} — about these notes`);
   document.title = appTitle();
 
-  els.random.hidden = bootstrap.features?.random === false;
+  syncRandom();
   const searchEnabled = bootstrap.features?.search !== false;
   els.form.hidden = !searchEnabled;
   els.input.disabled = !searchEnabled;
@@ -1780,6 +1795,14 @@ async function initDemo() {
     store: demoStore,
     announce,
     openView: (view) => goToView(view),
+    changeRandom: (enabled) => {
+      try {
+        localStorage.setItem(RANDOM_KEY, enabled ? 'on' : 'off');
+      } catch {
+        /* this visit still honours the choice */
+      }
+      syncRandom();
+    },
     changeReadingMode: (id) => {
       const { id: applied } = setReadingMode(id);
       const ids = currentReadingMode() === 'page' ? state.stack.slice(-1) : state.stack;

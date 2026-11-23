@@ -141,6 +141,7 @@ export function createDemoUi({
   announce = () => {},
   openView = () => {},
   changeReadingMode = null,
+  changeRandom = null,
   settleTracking = async () => {},
   beforeReset = null,
   afterReset = null,
@@ -1115,7 +1116,26 @@ export function createDemoUi({
       announce(`Notes open as ${readingModeLabel(applied).toLowerCase()}.`);
     });
     layoutField.append(layoutLabel, layoutSelect, layoutHint);
-    layout.append(layoutField, crumbsLabel);
+
+    const random = document.createElement('input');
+    random.type = 'checkbox';
+    random.id = 'demo-random';
+    random.checked = (() => {
+      try {
+        return localStorage.getItem('vitruvian.random') === 'on';
+      } catch {
+        return false;
+      }
+    })();
+    const randomLabel = el('label', 'demo-checkbox');
+    randomLabel.htmlFor = 'demo-random';
+    randomLabel.append(random, document.createTextNode(' Show the random note button'));
+    random.addEventListener('change', () => {
+      changeRandom?.(random.checked);
+      announce(random.checked ? 'Random note button shown.' : 'Random note button hidden.');
+    });
+
+    layout.append(layoutField, crumbsLabel, randomLabel);
     layout.append(el('p', 'demo-caption',
       'Page is the default: one note, ordinary links and browser Back. Stacked tabs keep earlier notes open to the left.'));
     fragment.append(layout);
@@ -1371,6 +1391,7 @@ export function createDemoUi({
     log.addEventListener('click', () => {
       openActivityDialog(note);
     });
+    wrap.append(el('span', 'demo-activity-kicker', 'Try this activity'));
     wrap.append(log);
     article.append(wrap);
     syncGuestMarker(note.id);

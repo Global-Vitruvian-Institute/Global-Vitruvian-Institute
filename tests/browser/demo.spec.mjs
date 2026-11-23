@@ -342,6 +342,13 @@ test('Settings offers the appearance presets with no account at all', { skip: !p
     assert.equal(await body.locator('label[for="demo-appearance"]').count(), 1);
     assert.equal(await select.getAttribute('aria-describedby'), 'demo-appearance-hint');
     assert.equal(await body.locator('#demo-appearance-hint').count(), 1);
+
+    // Random is opt-in: hidden by default, shown from Settings.
+    assert.equal(await page.locator('#random-button').isVisible(), false);
+    const random = body.locator('#demo-random');
+    assert.equal(await random.isChecked(), false);
+    await random.check();
+    await page.waitForFunction(() => !document.querySelector('#random-button').hidden);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -971,7 +978,9 @@ test('a legacy demo pane URL is migrated to the full-page region, keeping the re
 });
 
 test('Random and Search leave the account region and open notes', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage();
+  const { context, page, errors } = await openPage({
+    initScript: () => localStorage.setItem('vitruvian.random', 'on'),
+  });
   try {
     await waitForNote(page);
     await goToView(page, 'settings');
@@ -1295,12 +1304,12 @@ test('breadcrumbs show the curated path and can be turned off', { skip: !playwri
     await waitForNote(page, 'Movement');
     const crumbs = lastPane(page).locator('.breadcrumbs');
     await crumbs.waitFor();
-    assert.deepEqual(await crumbs.locator('.breadcrumb-link').allTextContents(), ['Base Note', 'Physical wellness']);
+    assert.deepEqual(await crumbs.locator('.breadcrumb-link').allTextContents(), ['Vitruvian', 'Physical wellness']);
     assert.equal(await page.evaluate(() => document.documentElement.dataset.breadcrumbs), 'on');
 
     await crumbs.locator('a[data-note-id="Physical wellness"]').click();
     await waitForNote(page, 'Physical wellness');
-    assert.deepEqual(await lastPane(page).locator('.breadcrumb-link').allTextContents(), ['Base Note']);
+    assert.deepEqual(await lastPane(page).locator('.breadcrumb-link').allTextContents(), ['Vitruvian']);
 
     await goToView(page, 'settings');
     await page.locator('#demo-breadcrumbs').uncheck();
@@ -1320,7 +1329,7 @@ test('breadcrumbs show the curated path and can be turned off', { skip: !playwri
 test('page mode follows ordinary links, with browser Back as the path', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage();
   try {
-    await waitForNote(page, 'Base Note');
+    await waitForNote(page, 'Vitruvian');
     assert.equal(await page.evaluate(() => document.documentElement.dataset.reading), 'page');
     assert.equal(await paneCount(page), 1);
     assert.equal(await page.locator('.pane-spine').isVisible(), false);
@@ -1334,7 +1343,7 @@ test('page mode follows ordinary links, with browser Back as the path', { skip: 
 
     await page.goBack();
     await page.waitForFunction(() => new URL(location.href).searchParams.get('note') === 'Base Note');
-    await waitForNote(page, 'Base Note');
+    await waitForNote(page, 'Vitruvian');
     assert.equal(await paneCount(page), 1);
 
     // The advanced layout is a preference, and switching back closes the row.
