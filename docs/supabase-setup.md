@@ -19,7 +19,10 @@ reading statistics, row-level security, and the private `evidence` bucket
 policies. Migration 0002 adds `account_stats` and the two activity RPCs
 (`record_note_view`, `add_active_time`). Migration 0003 adds transactional
 reviews, review history, and the pin RPC, and closes direct edits to reviewed
-work. A project that already ran the earlier migrations manually must be baselined before enabling the GitHub integration; see [Automatic migrations](#automatic-migrations).
+work. Migration 0004 repairs those functions if an earlier run partially
+failed. Migration 0005 opens participant sign-up while keeping staff roles
+invite-only. A project that applied earlier files manually must be baselined
+before enabling the GitHub integration; see [Automatic migrations](#automatic-migrations).
 
 ## Automatic migrations
 
@@ -46,7 +49,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20261122000001', 'initial'),
   ('20261122000002', 'reading_stats'),
   ('20261122000003', 'review_hardening'),
-  ('20261122000004', 'repair_functions')
+  ('20261122000004', 'repair_functions'),
+  ('20261122000005', 'open_signup')
 on conflict (version) do nothing;
 ```
 
@@ -58,18 +62,18 @@ straight to production.
 New migrations must use `supabase migration new <name>` or a 14-digit timestamp
 prefix, and should be reviewed before merging to `main`.
 
-## 2. Invite the first admin
+## 2. Create the first admin
 
-Sign-up is invitation-only. In the SQL editor:
+Reading is public and sign-up is open: a new account becomes a `participant` by
+default. Staff roles require an invite. In the SQL editor:
 
 ```sql
 insert into public.invites (email, role)
 values ('you@example.com', 'admin');
 ```
 
-Use the address that will own the account. The first sign-in consumes the
-invite and creates the profile with the invited role. Never set roles from the
-browser.
+Use the address that will own the account. The first sign-in consumes the invite
+and creates the profile with that role. Never set roles from the browser.
 
 ## 3. Configure email sign-in
 
