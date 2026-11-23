@@ -171,11 +171,11 @@ async function waitForAccountView(page, view = 'account') {
 /** Open an account view through the header entry and the region's own nav. */
 async function goToView(page, view = 'account') {
   if (!(await accountRegion(page).isVisible())) {
-    await page.click('#user-info-button');
+    // The gear opens Settings; a guest's Log in opens the account tab.
+    if (await page.locator('#login-link').isVisible()) await page.click('#login-link');
+    else await page.click('#settings-button');
     await accountRegion(page).waitFor();
   }
-  // Only click when the region actually has to change: the header entry already
-  // lands on User info.
   if ((await currentView(page)) !== view) {
     await page.locator(`#account [data-account-view="${view}"]`).click();
   }
@@ -251,7 +251,7 @@ test('User info is a full-page account region, not a pane in the stack', { skip:
     await waitForNote(page);
     assert.equal(await paneCount(page), 1);
 
-    await page.click('#user-info-button');
+    await page.click('#login-link');
     const body = await waitForAccountView(page, 'account');
 
     // The region is exposed; the reading stack is hidden but still mounted.
@@ -631,7 +631,7 @@ test('storage that is missing or full never stops the notes, and never loses inp
   });
   try {
     await waitForNote(missing.page);
-    await missing.page.click('#user-info-button');
+    await missing.page.click('#login-link');
     const body = accountBody(missing.page);
     await body.locator('.demo-failure').waitFor();
     assert.match(await body.textContent(), /User info is unavailable/);
@@ -893,7 +893,7 @@ test('an incomplete Supabase config explains itself in the account region and le
     await waitForNote(page);
     assert.equal(configRequests, 1);
 
-    await page.click('#user-info-button');
+    await page.click('#login-link');
     await page.locator('#account-content h1').waitFor();
     assert.equal((await page.locator('#account-content h1').textContent()).trim(), 'User info is unavailable');
     assert.match(await page.locator('#account-content').innerText(), /incomplete/i);
@@ -979,7 +979,7 @@ test('only the exposed region is focusable, and a view change moves focus to its
     assert.equal(await page.locator('#account-content').isVisible(), false);
 
     // Opening a view moves focus to its heading.
-    await page.click('#user-info-button');
+    await page.click('#login-link');
     await page.waitForFunction(() =>
       document.activeElement?.tagName === 'H1' && document.activeElement.textContent.trim() === 'User info');
 
@@ -1281,7 +1281,7 @@ test('page mode follows ordinary links, with browser Back as the path', { skip: 
     await waitForNote(page);
     await lastPane(page).locator('a[data-note-id="Physical wellness"]').first().click();
     await page.waitForFunction(() => document.querySelectorAll('.stack > .pane').length === 2);
-    await page.locator('#user-info-button').click();
+    await page.locator('#settings-button').click();
     await page.locator('#account-back').click();
     await waitForNote(page);
     await goToView(page, 'settings');
@@ -1356,7 +1356,8 @@ test('search, backlinks and the subpath build still work', { skip: !playwright }
     await page.locator('.stack > .pane').nth(1).waitFor();
     assert.match(page.url(), /\/vitruvian\/\?note=Base(%20|\+)Note&stackedNotes=Physical(%20|\+)wellness/);
 
-    // Backlinks render as cards.
+    // Backlinks are collapsed by default; open the disclosure, then read cards.
+    await lastPane(page).locator('.backlinks-summary').click();
     await lastPane(page).locator('.backlink-card').first().waitFor();
     assert.ok((await lastPane(page).locator('.backlink-card').count()) >= 1);
 
@@ -1396,7 +1397,7 @@ test('the mobile layout keeps the header and both regions usable', { skip: !play
       await page.evaluate(() => new Promise((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(resolve));
       }));
-      const button = await page.locator('#user-info-button').boundingBox();
+      const button = await page.locator('#settings-button').boundingBox();
       assert.ok(button.x >= 0 && button.x + button.width <= width + 0.5, `the User info control fits at ${width}px`);
       const search = await page.locator('#search-input').boundingBox();
       assert.ok(search.width >= 30, `the search field is usable at ${width}px`);

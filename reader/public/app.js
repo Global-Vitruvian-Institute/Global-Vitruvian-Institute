@@ -58,7 +58,7 @@ const els = {
   preview: document.getElementById('preview'),
   previewContent: document.getElementById('preview-content'),
   status: document.getElementById('status'),
-  userInfo: document.getElementById('user-info-button'),
+  settings: document.getElementById('settings-button'),
   login: document.getElementById('login-link'),
 };
 
@@ -528,12 +528,8 @@ let accountRenderToken = 0;
  * portfolio and settings; the header does not try to be an identity badge.
  */
 function syncAccountLabel() {
-  const signedIn = Boolean(demo?.session);
-  els.userInfo.textContent = 'Settings';
-  els.userInfo.title = 'Account and settings';
-  els.userInfo.setAttribute('aria-label', 'Account and settings');
-  // A guest gets one extra, quiet way in. The account page is the same page.
-  els.login.hidden = signedIn;
+  // A guest gets one quiet way in. The gear is the settings tab itself.
+  els.login.hidden = Boolean(demo?.session);
 }
 
 function syncAccountNav(view) {
@@ -706,7 +702,7 @@ function buildPane(id, index) {
   const article = document.createElement('article');
   article.className = 'note-content';
   article.setAttribute('aria-busy', 'true');
-  const backlinks = document.createElement('footer');
+  const backlinks = document.createElement('details');
   backlinks.className = 'backlinks';
   backlinks.hidden = true;
   sheet.append(article, backlinks);
@@ -883,33 +879,18 @@ function renderWikipediaSource(article, sourceUrl) {
 
 function renderBacklinks(footer, note) {
   footer.replaceChildren();
-  footer.hidden = note.source === 'wikipedia';
+  const backlinks = Array.isArray(note.backlinks) ? note.backlinks : [];
+  // A note with no incoming links gets no footer at all: the reading comes first.
+  footer.hidden = note.source === 'wikipedia' || backlinks.length === 0;
   if (footer.hidden) return;
 
-  const header = document.createElement('div');
-  header.className = 'backlinks-header';
-  const heading = document.createElement('h2');
-  heading.textContent = 'Links to this note';
-  header.append(heading);
-
-  if (note.obsidianUrl?.startsWith('obsidian://open?')) {
-    const editLink = document.createElement('a');
-    editLink.className = 'obsidian-link';
-    editLink.href = note.obsidianUrl;
-    editLink.textContent = 'Open in Obsidian';
-    editLink.title = 'Open this note in Obsidian to edit it';
-    header.append(editLink);
-  }
-  footer.append(header);
-
-  const backlinks = Array.isArray(note.backlinks) ? note.backlinks : [];
-  if (!backlinks.length) {
-    const empty = document.createElement('p');
-    empty.className = 'backlinks-empty';
-    empty.textContent = 'No other note links here.';
-    footer.append(empty);
-    return;
-  }
+  // Collapsed by default. The links stay one click away without competing with
+  // the note for attention.
+  footer.open = false;
+  const summary = document.createElement('summary');
+  summary.className = 'backlinks-summary';
+  summary.textContent = `Links to this note (${backlinks.length})`;
+  footer.append(summary);
 
   const list = document.createElement('ul');
   list.className = 'backlink-list';
@@ -1966,7 +1947,7 @@ for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
   document.addEventListener(type, () => tracker?.noteInteraction(), { passive: true });
 }
 
-els.userInfo.addEventListener('click', openUserInfo);
+els.settings.addEventListener('click', () => goToView(VIEW_SETTINGS));
 els.login.addEventListener('click', openUserInfo);
 
 // Crossing the breakpoint changes which sheets have a box at all. Widening

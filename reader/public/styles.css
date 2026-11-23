@@ -192,6 +192,24 @@ input {
 }
 
 .header-link,
+.header-icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.header-icon-button:hover {
+  background: var(--hover-fill);
+  color: var(--ink);
+}
+
 .header-button {
   cursor: pointer;
 }
@@ -645,9 +663,35 @@ input {
 .backlinks {
   max-width: 545px;
   margin: 3em auto 0;
-  padding-top: 1.25em;
-  border-top: 1px solid var(--rule);
   font-family: var(--font-ui);
+}
+
+.backlinks-summary {
+  display: inline-block;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.backlinks-summary::-webkit-details-marker {
+  display: none;
+}
+
+.backlinks-summary::before {
+  content: "›";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 120ms linear;
+}
+
+.backlinks[open] .backlinks-summary::before {
+  transform: rotate(90deg);
+}
+
+.backlinks[open] .backlinks-summary {
+  margin-bottom: 10px;
 }
 
 .backlinks-header {
@@ -965,7 +1009,8 @@ input {
    nothing global. Everything below is namespaced `demo-` (plus the single
    header entry) so it cannot leak into the notes themselves. */
 
-.user-info-button {
+.header-icon-button,
+.login-link {
   flex: 0 0 auto;
 }
 
@@ -1462,15 +1507,15 @@ input {
 /* ------------------------------------------------- activity entry point --- */
 
 .note-content .demo-activity-actions {
-  max-width: 545px;
-  margin: 2.4em auto 0;
-  padding-top: 1.1em;
-  border-top: 1px solid var(--rule);
+  margin: 1.6em 0 0;
   font-family: var(--font-ui);
 }
 
-.note-content .demo-activity-actions .demo-caption {
-  margin-top: 6px;
+.note-content .demo-log-activity {
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
 .note-content .demo-failure {

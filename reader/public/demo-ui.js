@@ -1204,14 +1204,11 @@ export function createDemoUi({
     if (!article || note?.activity !== true) return;
     if (article.querySelector('.demo-log-activity')) return;
     const wrap = el('div', 'demo-activity-actions');
-    const log = button('Log activity', 'demo-button demo-log-activity');
+    const log = button('Log activity', 'demo-button demo-button-primary demo-log-activity');
     log.addEventListener('click', () => {
       openActivityDialog(note);
     });
     wrap.append(log);
-    wrap.append(el('p', 'demo-caption', remote
-      ? 'Saved as a pending submission, visible to you and reviewers.'
-      : 'Saved in this browser only, as a pending submission.'));
     article.append(wrap);
   }
 
