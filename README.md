@@ -6,7 +6,37 @@ Notes open one page at a time by default: wikilinks are ordinary links, and brow
 
 **Settings → Appearance** chooses a stylesheet template. The Clear, Paper, and Soft Lilac templates are local. Minimal, Things, and Blue Topaz only adapt colour tokens from MIT-licensed Obsidian themes; sources are cited in `reader/public/themes/`. No theme layout or component CSS is copied.
 
-A small **browser-only participation demo** sits on top of the reader: notes marked `activity: true` gain a *Log activity* control, and a **User info** entry in the header opens a local account page with a pinned portfolio, an activity history and an admin review page. It is a modest illustration of how participating *might* work later — not a product, and not a substitute for the guide. The Markdown guide is the primary content and its notes are still being authored. There is no server, no real authentication and no email — see [Local participation demo](#local-participation-demo).
+Participation runs on Supabase in production: invite-only email sign-in, a private portfolio, evidence storage, reviewer verification, and reading statistics. The Markdown guide remains the primary content and is still being authored. A browser-only demo remains available by setting the runtime mode to `local`; see [Local participation demo](#local-participation-demo).
+
+## Status
+
+- **Prod:** https://global-vitruvian-institute.github.io/Global-Vitruvian-Institute/
+- **Local:** http://127.0.0.1:4182/
+- **Repo:** https://github.com/Global-Vitruvian-Institute/Global-Vitruvian-Institute
+- **Supabase:** https://supabase.com/dashboard/project/qplbfsnhrrsmudpnppoy
+- **SQL:** https://supabase.com/dashboard/project/qplbfsnhrrsmudpnppoy/sql/new
+- **Auth:** https://supabase.com/dashboard/project/qplbfsnhrrsmudpnppoy/auth/users
+- **URLs:** https://supabase.com/dashboard/project/qplbfsnhrrsmudpnppoy/auth/url-configuration
+- **Email templates:** https://supabase.com/dashboard/project/qplbfsnhrrsmudpnppoy/auth/templates
+
+**Real in prod**
+- Markdown content, reading UI, search, backlinks, themes.
+- Supabase auth, database, private file storage.
+- Admin sign-in works.
+
+**Not yet proven live**
+- Activity submission, file upload, reviewer flow, pinning, stats.
+
+**Mock**
+- Browser demo only when config says `local`; currently off.
+
+**Open**
+- Confirm migration `0003` applied.
+- Run one participant → reviewer cycle.
+
+**Docs**
+- [docs/supabase-setup.md](docs/supabase-setup.md)
+- [docs/production-plan.md](docs/production-plan.md)
 
 ## Local preview
 
@@ -39,6 +69,7 @@ The account views are a **separate full page**, not a pane in the reading stack:
 - **Clear** (default) — white surfaces, charcoal text and blue links.
 - **Paper** — warm off-white surfaces with the same blue links.
 - **Soft Lilac** — neutral light surfaces with restrained violet accents.
+- **Minimal**, **Things**, **Blue Topaz** — palettes adapted from MIT-licensed Obsidian themes.
 
 They change colour tokens only: layout, typography and behaviour are identical, and there is no dark or automatic mode. The choice is stored in this browser's `localStorage` (one key, `vitruvian.appearance`) and applied before first paint; if the browser refuses storage, the preset still applies for the visit and the page says so.
 
@@ -61,7 +92,7 @@ Only generated reader files and rendered notes are deployed. Obsidian settings, 
 
 ## Local participation demo
 
-Everything below runs in the reader's own page. It exists to show what participating would feel like while the guide content is being authored; it is not a prototype of a service, and it is deliberately modest rather than a second product experience. The activity notes in `vault/` are placeholders for human-written guidance: the demo records what a reader logs and adds no advice of its own.
+This section applies only when `reader/public/supabase-config.json` has `"mode": "local"`. Production uses Supabase. The demo exists to show the participation flow without a backend; it is not the deployed service. The activity notes in `vault/` are placeholders for human-written guidance: the demo records what a reader logs and adds no advice of its own.
 
 **It is deliberately insecure.** There is no server, no API, no real authentication and no email. Accounts, submissions, uploaded evidence and reading statistics live in this browser's IndexedDB for this origin, and may be lost or cleared at any time. Anyone with access to this browser profile can read them, and the demo admin page is designed to inspect every account stored here. Nothing is sent anywhere; nothing syncs between devices or browsers.
 
