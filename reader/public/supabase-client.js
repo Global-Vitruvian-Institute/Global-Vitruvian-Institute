@@ -160,7 +160,17 @@ export function createSupabaseClient({
 
   /** Ask Supabase to email a one-time code. No password is involved. */
   async function sendOtp(email) {
-    await request('/auth/v1/otp', {
+    // Return the link to whichever page asked for it, provided that origin is
+    // on the project's Redirect URLs allowlist.
+    let redirectTo = null;
+    try {
+      const location = globalThis.location;
+      if (location?.origin && location?.pathname) redirectTo = `${location.origin}${location.pathname}`;
+    } catch {
+      /* no browser location */
+    }
+    const query = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : '';
+    await request(`/auth/v1/otp${query}`, {
       method: 'POST',
       body: { email: String(email), create_user: true },
     });

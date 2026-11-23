@@ -344,7 +344,7 @@ export function createDemoUi({
       type: 'email',
       autocomplete: 'email',
       hint: remote
-        ? 'A one-time code will be emailed to this address.'
+        ? 'A sign-in link will be emailed to this address.'
         : 'Any address works. Nothing is sent, and there is no password.',
       maxLength: DEMO_LIMITS.maxEmailLength,
     });
@@ -358,13 +358,12 @@ export function createDemoUi({
       labelText: 'Verification code',
       type: 'text',
       autocomplete: 'off',
-      hint: remote ? 'Enter the code from the email.' : 'Type the code shown above.',
+      hint: remote ? 'Open the link from the email.' : 'Type the code shown above.',
     });
     const codeDisplay = el('p', 'demo-code');
     if (remote) {
       codeDisplay.textContent = 'Check this address for a sign-in email. Open its link on this device; the reader signs in automatically. No password is needed.';
       codeField.wrap.hidden = true;
-      signInButton.textContent = 'I opened the email link';
     } else {
       codeDisplay.append('Demo verification code, shown on screen because this demo sends no email: ');
       codeDisplay.append(el('code', 'demo-code-value', DEMO_VERIFICATION_CODE));
@@ -373,7 +372,7 @@ export function createDemoUi({
     codeStep.hidden = true;
     const codeActions = el('div', 'demo-dialog-actions');
     const backButton = button('Use a different email', 'demo-button');
-    const signInButton = el('button', 'demo-button demo-button-primary', 'Sign in');
+    const signInButton = el('button', 'demo-button demo-button-primary', remote ? 'I opened the email link' : 'Sign in');
     signInButton.type = 'submit';
     codeActions.append(backButton, signInButton);
     codeStep.append(codeDisplay, codeField.wrap, codeActions);
