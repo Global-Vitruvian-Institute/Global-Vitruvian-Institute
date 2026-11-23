@@ -15,3 +15,5 @@ Afterwards, think about what you noticed. Did your attention keep returning to a
 This is an introductory attention exercise, not a full account of vipassana or other meditation practices.
 
 Related: [[Physical wellness]], [[Mental Health]], [[Activities]].
+
+*AI-written draft.*

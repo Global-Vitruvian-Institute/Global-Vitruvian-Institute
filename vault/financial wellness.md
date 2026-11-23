@@ -8,3 +8,5 @@ A bus fare, lunch, or a monthly subscription can be a useful starting point for 
 ## Activities
 
 - [[Money check-in]]
+
+*AI-written draft.*

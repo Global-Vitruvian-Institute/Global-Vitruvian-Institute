@@ -24,3 +24,5 @@ There are a few activities to try as you read:
 - [[Money check-in]] — look at where your money went over a week.
 
 [[Activities]] brings these together on one page.
+
+*AI-written draft.*

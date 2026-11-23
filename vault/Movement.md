@@ -11,3 +11,5 @@ If walking is comfortable for you, take about ten minutes at an easy pace. Other
 Notice how you feel before and afterwards. Did anything change, or did it feel much the same? Either observation gives you something to write about.
 
 Related: [[Physical wellness]], [[Activities]].
+
+*AI-written draft.*

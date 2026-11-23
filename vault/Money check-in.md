@@ -13,3 +13,5 @@ Compare the list with what you expected. Was there anything you had forgotten? W
 If you save a response, describe what you noticed rather than sharing account numbers or other financial details.
 
 Related: [[financial wellness]], [[Activities]].
+
+*AI-written draft.*

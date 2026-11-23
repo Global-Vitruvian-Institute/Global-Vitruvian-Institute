@@ -9,3 +9,5 @@ How do sleep, movement, and rest fit into your day? This part of the guide will 
 
 - [[Movement]]
 - [[Breath]]
+
+*AI-written draft.*

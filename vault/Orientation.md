@@ -13,3 +13,5 @@ The subjects are linked from [[Base Note|the home page]]. You can read them in a
 You can save a response in this browser without an account. Logging in lets you collect saved activities in a portfolio. Account responses can be read by reviewers, so they are not a private journal.
 
 If you would like to change the colours or reading layout, those options are in Settings.
+
+*AI-written draft.*

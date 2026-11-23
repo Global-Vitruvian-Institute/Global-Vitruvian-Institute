@@ -8,3 +8,5 @@ It can be difficult to put a feeling into words, or to know whom to ask for help
 ## Activities
 
 - [[Breath]]
+
+*AI-written draft.*

@@ -11,3 +11,5 @@ These exercises give you something to try alongside the notes. They do not need 
 - [[Money check-in]] looks at a week of money coming in and going out.
 
 Each activity has space to record a response if you want to save one.
+
+*AI-written draft.*
