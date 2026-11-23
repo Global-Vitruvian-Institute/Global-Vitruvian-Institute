@@ -13,6 +13,32 @@ await rm(out, { recursive: true, force: true });
 await mkdir(out, { recursive: true });
 await cp('reader/public', out, { recursive: true });
 
+const parentMap = new Map();
+for (const note of vault.noteList()) {
+  const declared = note.frontmatter.parents;
+  if (!Array.isArray(declared)) continue;
+  const valid = declared
+    .map((id) => String(id).trim())
+    .filter((id) => id && id !== note.id && vault.notes.has(id));
+  if (valid.length) parentMap.set(note.id, [...new Set(valid)]);
+}
+
+/** The curated first-parent ancestry, root first, current note excluded. */
+function breadcrumbsFor(id) {
+  const trail = [];
+  const seen = new Set([id]);
+  let current = id;
+  while (parentMap.has(current)) {
+    const parent = parentMap.get(current)[0];
+    if (!parent || seen.has(parent)) break;
+    seen.add(parent);
+    const note = vault.notes.get(parent);
+    trail.unshift({ id: parent, title: note.title });
+    current = parent;
+  }
+  return trail;
+}
+
 const notes = Object.create(null);
 for (const note of vault.noteList()) {
   // Export only reader fields, never absolute paths, raw frontmatter or Obsidian URLs.
@@ -28,6 +54,7 @@ for (const note of vault.noteList()) {
     // boolean: `activity: true` turns on the local logging control. Raw
     // frontmatter is never published.
     activity: note.frontmatter.activity === true,
+    breadcrumbs: breadcrumbsFor(note.id),
     links: note.links.filter(link => link.kind === 'note'), backlinks: note.backlinks,
   };
 }

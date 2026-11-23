@@ -945,6 +945,25 @@ export function createDemoUi({
     const describeLayout = (id) => READING_MODES.find((mode) => mode.id === id)?.description ?? '';
     layoutHint.textContent = describeLayout(currentReadingMode());
     layoutSelect.setAttribute('aria-describedby', 'demo-reading-mode-hint');
+    // Breadcrumbs are a location aid, not navigation history. They default on
+    // wherever the note declares a parent.
+    const crumbs = document.createElement('input');
+    crumbs.type = 'checkbox';
+    crumbs.id = 'demo-breadcrumbs';
+    crumbs.checked = document.documentElement.getAttribute('data-breadcrumbs') !== 'off';
+    const crumbsLabel = el('label', 'demo-checkbox');
+    crumbsLabel.htmlFor = 'demo-breadcrumbs';
+    crumbsLabel.append(crumbs, document.createTextNode(' Show breadcrumbs'));
+    crumbs.addEventListener('change', () => {
+      const enabled = crumbs.checked;
+      document.documentElement.setAttribute('data-breadcrumbs', enabled ? 'on' : 'off');
+      try {
+        localStorage.setItem('vitruvian.breadcrumbs', enabled ? 'on' : 'off');
+      } catch {
+        /* the choice still applies for this visit */
+      }
+      announce(enabled ? 'Breadcrumbs shown.' : 'Breadcrumbs hidden.');
+    });
     layoutSelect.addEventListener('change', () => {
       const applied = changeReadingMode
         ? changeReadingMode(layoutSelect.value)
@@ -953,7 +972,7 @@ export function createDemoUi({
       announce(`Notes open as ${readingModeLabel(applied).toLowerCase()}.`);
     });
     layoutField.append(layoutLabel, layoutSelect, layoutHint);
-    layout.append(layoutField);
+    layout.append(layoutField, crumbsLabel);
     layout.append(el('p', 'demo-caption',
       'Page is the default: one note, ordinary links and browser Back. Stacked tabs keep earlier notes open to the left.'));
     fragment.append(layout);

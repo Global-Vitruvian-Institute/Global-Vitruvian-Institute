@@ -64,7 +64,7 @@ test('the build publishes only a boolean activity flag and no raw frontmatter', 
   try {
     await writeFile(join(root, 'Base Note.md'), '# Base Note\n');
     await writeFile(join(root, 'Breath.md'), '---\nactivity: true\n---\n# Breath\n');
-    await writeFile(join(root, 'Movement.md'), '---\nactivity: "true"\n---\n# Movement\n');
+    await writeFile(join(root, 'Movement.md'), '---\nactivity: "true"\nparents: ["Base Note"]\n---\n# Movement\n');
     await writeFile(join(root, 'Money check-in.md'), '---\nactivity: true\ntitle: Money check-in\n---\n# Money check-in\n');
     await writeFile(join(root, 'Reflection.md'), [
       '---',
@@ -101,8 +101,10 @@ test('the build publishes only a boolean activity flag and no raw frontmatter', 
 
     // The record is a fixed allowlist, so arbitrary frontmatter cannot leak.
     assert.deepEqual(Object.keys(built.notes.Breath).sort(), [
-      'activity', 'backlinks', 'html', 'id', 'links', 'obsidianUrl', 'source', 'text', 'title',
+      'activity', 'backlinks', 'breadcrumbs', 'html', 'id', 'links', 'obsidianUrl', 'source', 'text', 'title',
     ]);
+    assert.deepEqual(built.notes.Movement.breadcrumbs.map((crumb) => crumb.id), ['Base Note']);
+    assert.deepEqual(built.notes['Base Note'].breadcrumbs, []);
     const serialized = JSON.stringify(built);
     assert.doesNotMatch(serialized, /hunter2/);
     assert.doesNotMatch(serialized, /ada@example\.com/);
@@ -244,12 +246,13 @@ test('the demo is additive: it decorates rendered notes and cannot block them', 
 
 test('the header exposes exactly one account entry, a dialog host and one account region', async () => {
   const html = await readFile('reader/public/index.html', 'utf8');
-  assert.equal((html.match(/<button[^>]*user-info-button/g) ?? []).length, 1);
-  assert.match(html, /id="user-info-button"/);
-  assert.match(html, />Log in<\/button>/);
+  assert.equal((html.match(/<button[^>]*settings-button/g) ?? []).length, 1);
+  assert.match(html, /id="settings-button"/);
+  assert.match(html, /aria-label="Settings"/);
+  assert.match(html, /id="login-link"[^>]*>Log in<\/button>/);
   const app = await readFile('reader/public/app.js', 'utf8');
-  assert.match(app, /els\.userInfo\.textContent = 'Log in';/);
-  assert.match(app, /els\.userInfo\.textContent = name;/);
+  assert.match(app, /els\.settings\.addEventListener\('click', \(\) => goToView\(VIEW_SETTINGS\)\);/);
+  assert.match(app, /els\.login\.addEventListener\('click', openUserInfo\);/);
   assert.match(html, /id="demo-dialog-host"/);
   // No new global navigation item was introduced for the admin view.
   assert.doesNotMatch(html, /id="admin-link"/);
@@ -269,7 +272,7 @@ test('the header exposes exactly one account entry, a dialog host and one accoun
 
 test('demo styling is namespaced, reuses the reader tokens and stays light', async () => {
   const css = await readFile('reader/public/styles.css', 'utf8');
-  assert.match(css, /\.user-info-button \{/);
+  assert.match(css, /\.header-icon-button,/);
   assert.match(css, /\.note-content \.demo-row \{/);
   assert.match(css, /\.demo-dialog::backdrop/);
   const demoBlock = css.slice(css.indexOf('demo (local) ---'));

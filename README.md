@@ -4,6 +4,18 @@ A static reader for the Markdown in `vault/`. Edit notes in Obsidian; Markdown i
 
 Notes open one page at a time by default: wikilinks are ordinary links, and browser Back is the reading path. **Settings → Reading** offers stacked tabs as an advanced mode, where earlier notes stay open to the left. Search, backlinks, hover previews, and full-page User info / Settings / Admin are available in both modes.
 
+A note may declare its place in the guide with `parents` frontmatter:
+
+```yaml
+---
+parents: ["Physical wellness"]
+---
+```
+
+The build validates the IDs and publishes one compact breadcrumb trail from the
+first parent. Notes without `parents` show none. **Settings → Reading → Show
+breadcrumbs** turns the row off; it is on by default.
+
 **Settings → Appearance** chooses a stylesheet template. The Clear, Paper, and Soft Lilac templates are local. Minimal, Things, and Blue Topaz only adapt colour tokens from MIT-licensed Obsidian themes; sources are cited in `reader/public/themes/`. No theme layout or component CSS is copied.
 
 Participation runs on Supabase in production: public reading, open email sign-up, a private portfolio, evidence storage, reviewer verification, and reading statistics. The Markdown guide remains the primary content and is still being authored. A browser-only demo remains available by setting the runtime mode to `local`; see [Local participation demo](#local-participation-demo).

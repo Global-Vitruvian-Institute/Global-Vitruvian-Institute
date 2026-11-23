@@ -1,5 +1,6 @@
 ---
 draft: true
+parents: ["Base Note"]
 ---
 # Orientation
 

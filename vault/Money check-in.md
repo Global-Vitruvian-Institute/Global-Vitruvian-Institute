@@ -1,5 +1,6 @@
 ---
 activity: true
+parents: ["financial wellness"]
 ---
 # Money check-in
 

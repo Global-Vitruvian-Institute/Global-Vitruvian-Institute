@@ -807,6 +807,7 @@ async function fillPane(pane, id, index, token, { heading, hash = '', animate })
 
     article.removeAttribute('aria-busy');
     article.innerHTML = note.html;
+    renderBreadcrumbs(article, note);
     if (note.source === 'wikipedia') renderWikipediaSource(article, note.sourceUrl);
     renderBacklinks(backlinks, note);
     applyNoteTitle(pane, spineTitle, note.title, index);
@@ -844,6 +845,34 @@ async function fillPane(pane, id, index, token, { heading, hash = '', animate })
     pane.setAttribute('aria-label', `${friendlyName(id)} (could not be read)`);
     scheduleGeometry();
   }
+}
+
+/**
+ * One quiet line of location context above the note. The trail is curated in
+ * frontmatter and exported by the build; nothing here guesses from link history.
+ */
+function renderBreadcrumbs(article, note) {
+  const trail = Array.isArray(note.breadcrumbs) ? note.breadcrumbs : [];
+  if (!trail.length) return;
+  const nav = document.createElement('nav');
+  nav.className = 'breadcrumbs';
+  nav.setAttribute('aria-label', 'Breadcrumb');
+  trail.forEach((crumb, index) => {
+    if (index) {
+      const separator = document.createElement('span');
+      separator.className = 'breadcrumb-separator';
+      separator.setAttribute('aria-hidden', 'true');
+      separator.textContent = '›';
+      nav.append(separator);
+    }
+    const link = document.createElement('a');
+    link.className = 'breadcrumb-link';
+    link.href = noteHref(crumb.id);
+    link.dataset.noteId = crumb.id;
+    link.textContent = crumb.title;
+    nav.append(link);
+  });
+  article.prepend(nav);
 }
 
 function applyNoteTitle(pane, spineTitle, title, index) {

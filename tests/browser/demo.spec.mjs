@@ -611,7 +611,7 @@ test('dialogs take focus, keep it, dismiss on Escape, and block reader shortcuts
     // Escape dismisses and focus goes back to the control that opened it.
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'detached' });
-    assert.equal(await page.evaluate(() => document.activeElement?.className ?? ''), 'demo-button demo-log-activity');
+    assert.equal(await page.evaluate(() => document.activeElement?.className ?? ''), 'demo-button demo-button-primary demo-log-activity');
 
     // With the modal gone, the shortcut works again.
     await page.keyboard.press('ControlOrMeta+k');
@@ -1252,6 +1252,34 @@ test('the activity control never appears in a preview or in the Markdown', { ski
 });
 
 /* ------------------------------------------------------ reader regressions --- */
+
+test('breadcrumbs show the curated path and can be turned off', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Movement' });
+  try {
+    await waitForNote(page, 'Movement');
+    const crumbs = lastPane(page).locator('.breadcrumbs');
+    await crumbs.waitFor();
+    assert.deepEqual(await crumbs.locator('.breadcrumb-link').allTextContents(), ['Base Note', 'Physical wellness']);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.breadcrumbs), 'on');
+
+    await crumbs.locator('a[data-note-id="Physical wellness"]').click();
+    await waitForNote(page, 'Physical wellness');
+    assert.deepEqual(await lastPane(page).locator('.breadcrumb-link').allTextContents(), ['Base Note']);
+
+    await goToView(page, 'settings');
+    await page.locator('#demo-breadcrumbs').uncheck();
+    await page.locator('#account-back').click();
+    await waitForNote(page);
+    assert.equal(await lastPane(page).locator('.breadcrumbs').isVisible(), false);
+    await page.reload();
+    await waitForNote(page);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.breadcrumbs), 'off');
+    assert.equal(await lastPane(page).locator('.breadcrumbs').isVisible(), false);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
 
 test('page mode follows ordinary links, with browser Back as the path', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage();
