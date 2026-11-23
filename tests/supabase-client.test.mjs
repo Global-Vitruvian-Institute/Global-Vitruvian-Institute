@@ -149,3 +149,75 @@ test('private evidence uploads use the owner token and signed URLs', async () =>
   const url = await client.signedEvidenceUrl('u/s1/proof.png');
   assert.equal(url, 'https://example.supabase.co/storage/v1/object/sign/evidence/u/s1/proof.png?token=t');
 });
+
+test('a rejected refresh token clears the stored session', async () => {
+  const storage = memoryStorage();
+  let clock = 1_000;
+  const fetchImpl = fakeFetch({
+    '/auth/v1/verify': {
+      body: { access_token: 'access-1', refresh_token: 'refresh-1', expires_in: 3600, user: { id: 'u' } },
+    },
+    '/auth/v1/token': { status: 400, body: { error: 'invalid_grant', error_code: 'refresh_token_not_found' } },
+  });
+  const client = createSupabaseClient({
+    url: 'https://example.supabase.co',
+    publishableKey: 'sb_publishable_test',
+    fetchImpl,
+    storage,
+    now: () => clock,
+  });
+  await client.verifyOtp('a@example.com', '123456');
+  clock += 3_600_000;
+
+  assert.equal(await client.getSession(), null);
+  assert.equal(client.currentSession, null);
+  assert.equal(storage.getItem('vitruvian.supabase.session'), null);
+});
+
+test('an unreachable refresh keeps a valid session for a later retry', async () => {
+  const storage = memoryStorage();
+  let clock = 1_000;
+  const fetchImpl = fakeFetch({
+    '/auth/v1/verify': {
+      body: { access_token: 'access-1', refresh_token: 'refresh-1', expires_in: 3600, user: { id: 'u' } },
+    },
+    '/auth/v1/token': { status: 503, body: { message: 'upstream unavailable' } },
+  });
+  const client = createSupabaseClient({
+    url: 'https://example.supabase.co',
+    publishableKey: 'sb_publishable_test',
+    fetchImpl,
+    storage,
+    now: () => clock,
+  });
+  await client.verifyOtp('a@example.com', '123456');
+  clock += 3_600_000;
+
+  await assert.rejects(() => client.getSession(), /upstream unavailable/);
+  assert.notEqual(client.currentSession, null);
+  assert.notEqual(storage.getItem('vitruvian.supabase.session'), null);
+});
+
+test('a bare 401 is treated as a service problem, not a dead session', async () => {
+  const storage = memoryStorage();
+  let clock = 1_000;
+  const fetchImpl = fakeFetch({
+    '/auth/v1/verify': {
+      body: { access_token: 'access-1', refresh_token: 'refresh-1', expires_in: 3600, user: { id: 'u' } },
+    },
+    '/auth/v1/token': { status: 401, body: { message: 'Invalid API key' } },
+  });
+  const client = createSupabaseClient({
+    url: 'https://example.supabase.co',
+    publishableKey: 'sb_publishable_test',
+    fetchImpl,
+    storage,
+    now: () => clock,
+  });
+  await client.verifyOtp('a@example.com', '123456');
+  clock += 3_600_000;
+
+  await assert.rejects(() => client.getSession(), /Invalid API key/);
+  assert.notEqual(client.currentSession, null);
+  assert.notEqual(storage.getItem('vitruvian.supabase.session'), null);
+});

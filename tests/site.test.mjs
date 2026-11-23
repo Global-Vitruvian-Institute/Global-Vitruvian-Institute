@@ -201,8 +201,14 @@ test('account views are a separate page region, not panes in the stack', async (
   assert.match(app, /tracker\?\.setPaused\(Boolean\(demo\?\.hasOpenDialog\(\)\) \|\| isAccountView\(state\.view\)\);/);
   assert.match(app, /if \(isAccountView\(state\.view\)\) \{\n\s*tracker\?\.setActiveNote\(null\);/);
 
-  // The saved preference is applied before the chrome renders.
-  assert.match(app, /initAppearance\(\);\ninitReadingMode\(\);\nboot\(\);\ninitDemo\(\);/);
+  // Admin navigation uses the same role predicate as the account views: the
+  // demo-email shortcut is local-only.
+  assert.match(app, /els\.accountAdmin\.hidden = !\(demo\?\.session && demo\?\.canReview\(demo\.session\)\);/);
+  assert.match(ui, /!remote && isAdminEmail\(account\.email\)/);
+
+  // The saved preference is applied before the chrome renders, and the runtime
+  // store is chosen before the reader boots.
+  assert.match(app, /initAppearance\(\);\ninitReadingMode\(\);\ndemoBoot = initDemo\(\);\nboot\(\);/);
 });
 
 test('the demo is additive: it decorates rendered notes and cannot block them', async () => {
@@ -211,13 +217,19 @@ test('the demo is additive: it decorates rendered notes and cannot block them', 
   const fillPreview = app.slice(app.indexOf('async function fillPreview'), app.indexOf('function showPreview'));
 
   // The activity control is added once, after a successful render, never in a preview.
-  assert.match(fillPane, /demo\?\.decorateArticle\(article, note\)/);
-  assert.match(fillPane, /note\.source === 'vault'\) tracker\?\.markRendered\(id\)/);
+  assert.match(fillPane, /demo\.decorateArticle\(article, note\)/);
+  assert.match(fillPane, /if \(note\.source === 'vault'\) \{/);
+  assert.match(fillPane, /tracker\.markRendered\(id\)/);
   assert.doesNotMatch(fillPane, /demoViewForPaneId|demo\.renderPane/);
   assert.doesNotMatch(fillPreview, /decorateArticle|log-activity/);
   assert.doesNotMatch(app, /note\.html[\s\S]{0,80}log-activity/);
 
-  // The demo boots beside the reader and cannot block the notes.
+  // The demo boots beside the reader and cannot block the notes. A note that
+  // rendered before the runtime store was chosen is decorated and counted later.
+  assert.match(app, /import \{ loadRuntimeStore \} from '\.\/store-config\.js';/);
+  assert.match(app, /demoStore = await loadRuntimeStore\(\);/);
+  assert.match(app, /const pendingDemoDecorations = new Map\(\);/);
+  assert.match(app, /for \(const \[article, entry\] of pendingDemoDecorations\)/);
   assert.match(app, /demo\.init\(\)\.then\(syncDemoSession\)\.catch\(\(\) => \{\}\);/);
 
   // A modal dialog owns the keyboard; reader shortcuts stand down.

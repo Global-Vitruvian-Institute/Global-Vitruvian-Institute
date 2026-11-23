@@ -97,7 +97,7 @@ Active time and distinct pages are measured only for the signed-in reader, only 
 
 ## Production
 
-See [docs/production-plan.md](docs/production-plan.md) for the environment plan and [docs/supabase-setup.md](docs/supabase-setup.md) for the live project steps. Schema and RLS are in `supabase/migrations/`; the participation features remain a browser-only mock until the store adapter is connected.
+See [docs/production-plan.md](docs/production-plan.md) for the environment plan and [docs/supabase-setup.md](docs/supabase-setup.md) for the live project steps. Schema, RLS, and the Supabase store adapter are in `supabase/` and `reader/public/`; `reader/public/supabase-config.json` selects the live backend or the local demo.
 
 ## Reader provenance
 

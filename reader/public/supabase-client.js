@@ -31,6 +31,28 @@ function normalize(url) {
   return String(url ?? '').replace(/\/+$/, '');
 }
 
+/**
+ * A refresh failure that will never succeed with the same token. Network and
+ * server errors are not in this set: an unreachable Supabase must not cost the
+ * reader their stored session.
+ */
+function isInvalidSessionError(error) {
+  if (!(error instanceof SupabaseError)) return false;
+  const code = String(error.code ?? '').toLowerCase();
+  if (code) {
+    return (error.status === 400 || error.status === 401)
+      && (code.includes('refresh_token')
+        || code.includes('invalid_grant')
+        || code.includes('session')
+        || code.includes('invalid_claims')
+        || code.includes('user_not_found'));
+  }
+  // GoTrue answers a dead refresh token with 400 even when it omits an error
+  // code. A bare 401 is more likely a bad publishable key than a dead session,
+  // so it is not treated as definitive.
+  return error.status === 400;
+}
+
 export function createSupabaseClient({
   url,
   publishableKey,
@@ -135,10 +157,24 @@ export function createSupabaseClient({
     const generation = authGeneration;
     const refreshToken = session.refresh_token;
     refreshPromise = (async () => {
-      const payload = await request('/auth/v1/token?grant_type=refresh_token', {
-        method: 'POST',
-        body: { refresh_token: refreshToken },
-      });
+      let payload;
+      try {
+        payload = await request('/auth/v1/token?grant_type=refresh_token', {
+          method: 'POST',
+          body: { refresh_token: refreshToken },
+        });
+      } catch (error) {
+        // A rejected refresh token can never be retried. Drop it so the account
+        // UI returns to signed-out instead of stranding the reader on an error.
+        if (isInvalidSessionError(error)) {
+          if (generation === authGeneration) {
+            authGeneration += 1;
+            writeSession(null);
+          }
+          return null;
+        }
+        throw error;
+      }
       // Signing out while the refresh was in flight must win.
       if (generation !== authGeneration) return null;
       return saveAuth(payload);
@@ -197,6 +233,11 @@ export function createSupabaseClient({
     });
   }
 
+  async function rpc(fn, args = {}) {
+    const { token } = await authHeaders();
+    return request(`/rest/v1/rpc/${fn}`, { method: 'POST', body: args, token });
+  }
+
   async function remove(table, query) {
     const { token } = await authHeaders();
     return request(`/rest/v1/${table}?${query}`, { method: 'DELETE', token });
@@ -219,6 +260,11 @@ export function createSupabaseClient({
         'x-upsert': 'false',
       },
     });
+  }
+
+  async function removeEvidence(path) {
+    const { token } = await authHeaders();
+    return request(`/storage/v1/object/evidence/${encodeObjectPath(path)}`, { method: 'DELETE', token });
   }
 
   /** A short-lived download URL for one private object. */
@@ -244,7 +290,9 @@ export function createSupabaseClient({
     insert,
     update,
     remove,
+    rpc,
     uploadEvidence,
+    removeEvidence,
     signedEvidenceUrl,
     get currentSession() {
       return session;

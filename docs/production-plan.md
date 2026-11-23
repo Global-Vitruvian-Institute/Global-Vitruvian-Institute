@@ -45,10 +45,10 @@ a small public config file:
 ```
 
 ```json
-{ "mode": "supabase", "url": "https://<project>.supabase.co", "anonKey": "..." }
+{ "mode": "supabase", "url": "https://<project>.supabase.co", "publishableKey": "..." }
 ```
 
-Until that file says otherwise, the current local demo remains the default.
+The runtime mode is selected in `reader/public/supabase-config.json`; `local` keeps the browser demo, `supabase` uses the project.
 This keeps UI iteration independent of backend work.
 
 ## Supabase setup order

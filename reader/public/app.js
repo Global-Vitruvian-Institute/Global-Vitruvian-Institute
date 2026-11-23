@@ -18,10 +18,10 @@
 import { fetchStatic as fetch } from './static-api.js';
 import { wikipediaArticle } from './wikipedia.js';
 import { designPaneLayout, designContextRequest, designContextHeading } from './design-context.js';
-import { createDemoStore } from './demo-store.js';
+import { loadRuntimeStore } from './store-config.js';
 import { createDemoUi } from './demo-ui.js';
 import { createReadingTracker } from './demo-tracking.js';
-import { demoPaneLabel, isAdminEmail, isDemoPaneId } from './demo-model.js';
+import { demoPaneLabel, isDemoPaneId } from './demo-model.js';
 import {
   buildRouteQuery,
   isAccountView,
@@ -541,7 +541,7 @@ function syncAccountNav(view) {
     else link.removeAttribute('aria-current');
   }
   // Admin navigation is authorized, and only inside the account region.
-  els.accountAdmin.hidden = !(demo?.session && isAdminEmail(demo.session.email));
+  els.accountAdmin.hidden = !(demo?.session && demo?.canReview(demo.session));
 }
 
 async function renderAccountView(view, { focus = false } = {}) {
@@ -551,6 +551,13 @@ async function renderAccountView(view, { focus = false } = {}) {
   document.title = `${VIEW_TITLES[view] ?? 'Account'} · ${appTitle()}`;
 
   const scrollTop = els.account.scrollTop;
+
+  // Choosing the store is asynchronous. Wait for it before showing the
+  // "unavailable" region, so a slow config load is not reported as a failure.
+  if (!demo && demoBoot) {
+    await demoBoot;
+    if (token !== accountRenderToken || state.view !== view) return;
+  }
 
   if (!demo) {
     els.accountContent.replaceChildren(demoUnavailable());
@@ -633,6 +640,7 @@ function renderStack({ focusElement = false, focusIndex = null, heading = null, 
   demo?.closeDialogs();
   for (const pane of state.panes) demo?.releasePane(pane);
   tracker?.clearRendered();
+  pendingDemoDecorations.clear();
 
   els.stack.replaceChildren();
   state.panes = [];
@@ -801,10 +809,19 @@ async function fillPane(pane, id, index, token, { heading, hash = '', animate })
     applyNoteTitle(pane, spineTitle, note.title, index);
     // The only hook into note rendering: one control, only when the frontmatter
     // said `activity: true`. Previews and Markdown never reach this path.
-    demo?.decorateArticle(article, note);
+    if (demo) {
+      demo.decorateArticle(article, note);
+    } else {
+      // The demo boots beside the reader: a note that rendered before the store
+      // was chosen is decorated and counted as soon as the store exists.
+      pendingDemoDecorations.set(article, { id, note, rendered: false });
+    }
     // A page is counted only once the note has really rendered, and only for a
     // note from the vault. Wikipedia articles and design panes are not pages.
-    if (note.source === 'vault') tracker?.markRendered(id);
+    if (note.source === 'vault') {
+      if (tracker) tracker.markRendered(id);
+      else if (pendingDemoDecorations.has(article)) pendingDemoDecorations.get(article).rendered = true;
+    }
 
     // The content (and so the scrollable height) is only real now.
     restorePaneScroll(pane);
@@ -992,6 +1009,7 @@ function clearStackForMessage() {
   closeSearch();
   tracker?.clearRendered();
   tracker?.setActiveNote(null);
+  pendingDemoDecorations.clear();
 }
 
 function renderBootstrapError(error) {
@@ -1633,6 +1651,10 @@ async function handleDesignContextMessage(event) {
 let demo = null;
 let demoStore = null;
 let tracker = null;
+/** Resolves once the runtime store has been chosen (or failed) at boot. */
+let demoBoot = null;
+/** Notes that rendered before the runtime store was chosen. */
+const pendingDemoDecorations = new Map();
 /** Which account measured reading time should be credited to, at flush time. */
 let trackedAccountId = null;
 /** True while a reset is in progress: no new statistics write may be issued. */
@@ -1697,9 +1719,9 @@ async function syncDemoSession() {
   refreshActiveAccountView();
 }
 
-function initDemo() {
+async function initDemo() {
   try {
-    demoStore = createDemoStore();
+    demoStore = await loadRuntimeStore();
   } catch {
     return;
   }
@@ -1754,6 +1776,16 @@ function initDemo() {
   demo.onDialogChange(syncTrackingPause);
   tracker.setVisible(document.visibilityState !== 'hidden');
   tracker.start();
+  tracker.setActiveNote(isAccountView(state.view) ? null : mostVisiblePaneId());
+
+  // Notes can render while the runtime config is still loading. Give each one
+  // its activity control and the page view it earned, without blocking notes.
+  for (const [article, entry] of pendingDemoDecorations) {
+    if (!article.isConnected) continue;
+    demo.decorateArticle(article, entry.note);
+    if (entry.rendered) tracker.markRendered(entry.id);
+  }
+  pendingDemoDecorations.clear();
 
   // Deliberately not awaited: a storage failure must not stop the notes loading.
   demo.init().then(syncDemoSession).catch(() => {});
@@ -1996,5 +2028,5 @@ els.key.textContent = isMac() ? '⌘K' : 'Ctrl K';
 // re-reads it so the module's in-memory choice matches what is on screen.
 initAppearance();
 initReadingMode();
+demoBoot = initDemo();
 boot();
-initDemo();

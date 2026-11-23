@@ -144,6 +144,15 @@ export function createDemoUi({
   beforeReset = null,
   afterReset = null,
 } = {}) {
+  const remote = Boolean(store?.remote);
+  const disclosureText = () => store?.disclosure || DEMO_DISCLOSURE;
+  // In Supabase mode the database role is the only authority. The demo email
+  // convention is a local-demo shortcut and must not leak into remote mode.
+  const canReview = (account) => Boolean(account)
+    && (account.role === 'admin'
+      || account.role === 'reviewer'
+      || (!remote && isAdminEmail(account.email)));
+
   let session = null;
   let ready = false;
   let failure = null;
@@ -334,7 +343,9 @@ export function createDemoUi({
       labelText: 'Email address',
       type: 'email',
       autocomplete: 'email',
-      hint: 'Any address works. Nothing is sent, and there is no password.',
+      hint: remote
+        ? 'A one-time code will be emailed to this address.'
+        : 'Any address works. Nothing is sent, and there is no password.',
       maxLength: DEMO_LIMITS.maxEmailLength,
     });
     const emailStep = el('div', 'demo-signin-step');
@@ -347,11 +358,15 @@ export function createDemoUi({
       labelText: 'Verification code',
       type: 'text',
       autocomplete: 'off',
-      hint: 'Type the code shown above.',
+      hint: remote ? 'Enter the code from the email.' : 'Type the code shown above.',
     });
     const codeDisplay = el('p', 'demo-code');
-    codeDisplay.append('Demo verification code, shown on screen because this demo sends no email: ');
-    codeDisplay.append(el('code', 'demo-code-value', DEMO_VERIFICATION_CODE));
+    if (remote) {
+      codeDisplay.textContent = 'Check this address for a one-time code. No password is needed.';
+    } else {
+      codeDisplay.append('Demo verification code, shown on screen because this demo sends no email: ');
+      codeDisplay.append(el('code', 'demo-code-value', DEMO_VERIFICATION_CODE));
+    }
     const codeStep = el('div', 'demo-signin-step');
     codeStep.hidden = true;
     const codeActions = el('div', 'demo-dialog-actions');
@@ -382,22 +397,35 @@ export function createDemoUi({
         const problem = validateEmail(emailField.control.value);
         emailField.setError(problem);
         if (problem) return;
+        continueButton.disabled = true;
+        try {
+          await store.sendCode(emailField.control.value);
+        } catch (error) {
+          emailField.setError(error?.message ?? 'The code could not be sent.');
+          continueButton.disabled = false;
+          return;
+        }
+        continueButton.disabled = false;
         step = 'code';
         emailStep.hidden = true;
         codeStep.hidden = false;
         codeField.control.focus();
-        announce('Demo verification code shown on screen. Enter it to finish signing in.');
+        announce(remote
+          ? 'A one-time code was sent to that address.'
+          : 'Demo verification code shown on screen. Enter it to finish signing in.');
         return;
       }
 
-      const problem = validateVerificationCode(codeField.control.value);
+      const problem = remote
+        ? (/^\d{6,10}$/.test(codeField.control.value.trim()) ? null : 'Enter the code from the email.')
+        : validateVerificationCode(codeField.control.value);
       codeField.setError(problem);
       if (problem) return;
 
       saving = true;
       signInButton.disabled = true;
       try {
-        const { account, created } = await store.signIn(emailField.control.value);
+        const { account, created } = await store.signIn(emailField.control.value, codeField.control.value);
         await store.writeSession(account.id);
         setSession(account);
         announce(created
@@ -426,7 +454,7 @@ export function createDemoUi({
       },
     });
     entry.body.append(built.form);
-    entry.body.append(el('p', 'demo-note', DEMO_DISCLOSURE));
+    entry.body.append(el('p', 'demo-note', disclosureText()));
     openDialog(entry, built.focus);
     return entry;
   }
@@ -436,12 +464,15 @@ export function createDemoUi({
   async function openActivityDialog(note) {
     await init();
     if (!ready) {
-      announce('Activity logging is unavailable because this browser gave the demo no storage.');
+      announce(failure?.message
+        ?? 'Activity logging is unavailable because this browser gave the demo no storage.');
       return;
     }
     if (!session) {
       openSignInDialog({
-        intro: 'Sign in first. The activity is logged straight after, and stays in this browser.',
+        intro: remote
+          ? 'Sign in first. The activity is logged straight after, and visible to reviewers.'
+          : 'Sign in first. The activity is logged straight after, and stays in this browser.',
         onSignedIn: () => {
           openActivityDialog(note);
         },
@@ -450,7 +481,9 @@ export function createDemoUi({
     }
 
     const entry = createDialog({ title: `Log activity — ${note.title || note.id}`, className: 'demo-dialog-activity' });
-    entry.body.append(el('p', 'demo-lede', 'Your submission is saved in this browser as pending review.'));
+    entry.body.append(el('p', 'demo-lede', remote
+      ? 'Your submission is saved as pending review. A reviewer can read it and any evidence you attach.'
+      : 'Your submission is saved in this browser as pending review.'));
 
     const form = el('form', 'demo-form');
     form.noValidate = true;
@@ -460,7 +493,9 @@ export function createDemoUi({
       id: `${prefix}-reflection`,
       labelText: 'Reflection',
       rows: 5,
-      hint: 'Optional if you attach a file. Nothing here is sent anywhere.',
+      hint: remote
+        ? 'Optional if you attach a file. Saved with your account and visible to reviewers.'
+        : 'Optional if you attach a file. Nothing here is sent anywhere.',
       maxLength: DEMO_LIMITS.maxReflectionLength,
     });
 
@@ -530,7 +565,9 @@ export function createDemoUi({
           evidence,
         });
         entry.close();
-        announce('Activity logged and saved as pending review in this browser.');
+        announce(remote
+          ? 'Activity logged and saved as pending review.'
+          : 'Activity logged and saved as pending review in this browser.');
         notifyChange();
       } catch (error) {
         // The form keeps everything the reader typed or chose.
@@ -745,20 +782,22 @@ export function createDemoUi({
     if (!session) {
       fragment.append(el('p', 'demo-lede',
         'Sign in with an email address to log activities and keep a portfolio. '
-        + 'This is a local demo: there is no password, and no email is sent.'));
+        + (remote
+          ? 'This preview uses a one-time email code and no password.'
+          : 'This is a local demo: there is no password, and no email is sent.')));
       const built = buildSignInForm({
         idPrefix: 'demo-pane-signin',
         onSignedIn: () => notifyChange(),
       });
       fragment.append(built.form);
-      fragment.append(el('p', 'demo-note', DEMO_DISCLOSURE));
+      fragment.append(el('p', 'demo-note', disclosureText()));
       return fragment;
     }
 
     fragment.append(el('p', 'demo-lede', `Signed in as ${session.email}.`));
     fragment.append(el('p', 'demo-caption', session.synthetic
       ? 'Synthetic demo participant, seeded in this browser.'
-      : 'Local account in this browser.'));
+      : (remote ? 'Signed in with Supabase.' : 'Local account in this browser.')));
 
     // The portfolio and history are the point of this view; the reading
     // statistics are a secondary footnote below them.
@@ -813,7 +852,9 @@ export function createDemoUi({
     ]));
     reading.append(el('p', 'demo-caption', session.synthetic
       ? 'Synthetic sample data, not a real reader.'
-      : 'Local estimate, measured in this browser only.'));
+      : (remote
+        ? 'Measured while reading and stored with your account.'
+        : 'Local estimate, measured in this browser only.')));
     fragment.append(reading);
 
     const account = section('Account');
@@ -824,7 +865,7 @@ export function createDemoUi({
       try {
         await store.writeSession(null);
         setSession(null);
-        announce('Signed out of the local demo account.');
+        announce(remote ? 'Signed out.' : 'Signed out of the local demo account.');
       } catch (error) {
         signOut.disabled = false;
         announce(error?.message ?? 'Sign-out failed.');
@@ -832,19 +873,21 @@ export function createDemoUi({
     });
     actions.append(signOut);
 
-    if (isAdminEmail(session.email)) {
+    if (canReview(session)) {
       const admin = button('Admin page', 'demo-button');
       admin.addEventListener('click', () => openView('admin'));
       actions.append(admin);
     }
 
-    const clear = button('Clear local demo data', 'demo-button');
+    const clear = remote ? null : button('Clear local demo data', 'demo-button');
+    if (clear) {
     clear.addEventListener('click', () => openClearDataDialog());
     actions.append(clear);
+    }
     account.append(actions);
     fragment.append(account);
 
-    fragment.append(el('p', 'demo-note', DEMO_DISCLOSURE));
+    fragment.append(el('p', 'demo-note', disclosureText()));
     return fragment;
   }
 
@@ -931,7 +974,7 @@ export function createDemoUi({
       'Presets change colour only. The reader stays light either way: there is no dark mode and no automatic switch.'));
     fragment.append(appearance);
 
-    fragment.append(el('p', 'demo-note', DEMO_DISCLOSURE));
+    fragment.append(el('p', 'demo-note', disclosureText()));
     return fragment;
   }
 
@@ -958,12 +1001,15 @@ export function createDemoUi({
     const fragment = document.createDocumentFragment();
     fragment.append(el('h1', 'demo-title', 'Admin'));
     fragment.append(el('p', 'demo-lede',
-      'Local-only demo admin. It can read every account, submission and uploaded file stored in this browser.'));
+      remote
+        ? 'Reviewer view. It can read every account, submission and uploaded file in this project.'
+        : 'Local-only demo admin. It can read every account, submission and uploaded file stored in this browser.'));
 
-    if (!session || !isAdminEmail(session.email)) {
-      fragment.append(el('p', 'demo-caption',
-        `Sign in as ${DEMO_ADMIN_EMAIL} from User info to review submissions.`));
-      fragment.append(el('p', 'demo-note', DEMO_DISCLOSURE));
+    if (!session || !canReview(session)) {
+      fragment.append(el('p', 'demo-caption', remote
+        ? 'Sign in with a reviewer or admin account to review submissions.'
+        : `Sign in as ${DEMO_ADMIN_EMAIL} from User info to review submissions.`));
+      fragment.append(el('p', 'demo-note', disclosureText()));
       return fragment;
     }
 
@@ -987,7 +1033,9 @@ export function createDemoUi({
       ]));
       item.append(el('p', 'demo-caption', account.synthetic
         ? 'Synthetic sample statistics, seeded with the demo.'
-        : 'Local estimate, measured in this browser only.'));
+        : (remote
+        ? 'Measured while reading and stored with your account.'
+        : 'Local estimate, measured in this browser only.')));
       accountList.append(item);
     }
     participants.append(accountList);
@@ -1011,7 +1059,7 @@ export function createDemoUi({
     }
     fragment.append(submissions);
 
-    fragment.append(el('p', 'demo-note', DEMO_DISCLOSURE));
+    fragment.append(el('p', 'demo-note', disclosureText()));
     return fragment;
   }
 
@@ -1033,7 +1081,34 @@ export function createDemoUi({
       error?.message
       || 'This browser did not give the demo any local storage, so accounts and submissions cannot be shown.'));
     wrap.append(el('p', 'demo-caption', 'The notes themselves are unaffected.'));
-    wrap.append(el('p', 'demo-note', DEMO_DISCLOSURE));
+
+    // A transient failure (an unreachable Supabase, say) is worth retrying, and
+    // a stored session that cannot be refreshed must be clearable from here.
+    const actions = el('div', 'demo-actions');
+    const retry = button('Try again', 'demo-button');
+    retry.addEventListener('click', async () => {
+      retry.disabled = true;
+      failure = null;
+      initPromise = null;
+      await init();
+      notifyChange();
+    });
+    const signOut = button('Sign out', 'demo-button');
+    signOut.addEventListener('click', async () => {
+      signOut.disabled = true;
+      try {
+        await store.writeSession(null);
+      } catch {
+        /* the local session is already the problem */
+      }
+      failure = null;
+      initPromise = null;
+      await init();
+      notifyChange();
+    });
+    actions.append(retry, signOut);
+    wrap.append(actions);
+    wrap.append(el('p', 'demo-note', disclosureText()));
     return wrap;
   }
 
@@ -1112,7 +1187,9 @@ export function createDemoUi({
       openActivityDialog(note);
     });
     wrap.append(log);
-    wrap.append(el('p', 'demo-caption', 'Saved in this browser only, as a pending submission.'));
+    wrap.append(el('p', 'demo-caption', remote
+      ? 'Saved as a pending submission, visible to you and reviewers.'
+      : 'Saved in this browser only, as a pending submission.'));
     article.append(wrap);
   }
 
@@ -1132,6 +1209,9 @@ export function createDemoUi({
     openClearDataDialog,
     get session() {
       return session;
+    },
+    canReview(account = session) {
+      return canReview(account);
     },
     get ready() {
       return ready;

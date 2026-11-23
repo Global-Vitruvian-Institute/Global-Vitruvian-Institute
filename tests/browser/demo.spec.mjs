@@ -65,6 +65,13 @@ before(async () => {
         response.writeHead(204).end();
         return;
       }
+      // The browser suite exercises the local demo; production configuration is
+      // covered by the unit tests and the real deployment.
+      if (pathname === '/supabase-config.json') {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ mode: 'local' }));
+        return;
+      }
       let filePath = join(repoRoot, 'dist', normalize(pathname));
       if (pathname.endsWith('/')) filePath = join(filePath, 'index.html');
       const info = await stat(filePath).catch(() => null);
@@ -859,6 +866,39 @@ test('an account view works, and returning to the notes explains itself, when th
     await page.waitForFunction(() => !document.querySelector('#stack').hidden);
     assert.equal(await page.locator('#stack > .stack-message').count(), 1);
     assert.match(await page.locator('#stack').innerText(), /could not be loaded/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('an incomplete Supabase config explains itself in the account region and leaves the notes usable', { skip: !playwright }, async () => {
+  const context = await browser.newContext({ viewport: config.viewport, baseURL: baseUrlFor() });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error));
+  let configRequests = 0;
+  // The runtime config is a real fetch, not the static notes adapter. A bad
+  // config must not silently fall back to local storage, and must not call out.
+  await page.route('**/supabase-config.json', (route) => {
+    configRequests += 1;
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ mode: 'supabase', url: '', publishableKey: '' }),
+    });
+  });
+  try {
+    await page.goto('/');
+    await waitForNote(page);
+    assert.equal(configRequests, 1);
+
+    await page.click('#user-info-button');
+    await page.locator('#account-content h1').waitFor();
+    assert.equal((await page.locator('#account-content h1').textContent()).trim(), 'User info is unavailable');
+    assert.match(await page.locator('#account-content').innerText(), /incomplete/i);
+    assert.equal(await page.getByRole('button', { name: 'Try again' }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: 'Sign out' }).count(), 1);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();

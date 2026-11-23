@@ -300,7 +300,12 @@ export function createDemoStore({
    * Signing in is creating the account if it is new. There is no password and no
    * verification beyond the on-screen code; the caller checks that code.
    */
-  async function signIn(email) {
+  /** The demo sends nothing; the on-screen code does the work. */
+  async function sendCode() {
+    return { sent: false };
+  }
+
+  async function signIn(email, code) {
     const problem = validateEmail(email);
     if (problem) throw new DemoValidationError(problem, { email: problem });
     const normalized = normalizeEmail(email);
@@ -311,6 +316,7 @@ export function createDemoStore({
       id: createId('account', randomUUID),
       email: normalized,
       displayName: normalized.split('@')[0].slice(0, 60) || 'Reader',
+      role: normalized === 'admin@vitruvian.demo' ? 'admin' : 'participant',
       synthetic: false,
       createdAt: new Date().toISOString(),
     };
@@ -539,6 +545,7 @@ export function createDemoStore({
     version,
     isAdminEmail: (email) => normalizeEmail(email) === DEMO_ADMIN_EMAIL,
     listAccounts,
+    sendCode,
     signIn,
     readSession,
     writeSession,
