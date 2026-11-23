@@ -568,9 +568,25 @@ async function renderAccountView(view, { focus = false } = {}) {
     return;
   }
 
+  // A quiet placeholder after a short delay: instant renders never flash it,
+  // slow ones say the page is still coming.
+  const loadingTimer = window.setTimeout(() => {
+    if (token !== accountRenderToken || state.view !== view) return;
+    if (els.accountContent.childElementCount) return;
+    const loading = document.createElement('p');
+    loading.className = 'account-loading';
+    loading.setAttribute('role', 'status');
+    loading.append(
+      Object.assign(document.createElement('span'), { className: 'account-loading-dot', ariaHidden: 'true' }),
+      document.createTextNode('Loading'),
+    );
+    els.accountContent.replaceChildren(loading);
+  }, 140);
+
   const committed = await demo.renderPane(els.accountContent, view, {
     isCurrent: () => token === accountRenderToken && state.view === view,
   });
+  window.clearTimeout(loadingTimer);
   if (token !== accountRenderToken) return;
   // A refresh after a pin or a review must not move the reader's place.
   els.account.scrollTop = scrollTop;

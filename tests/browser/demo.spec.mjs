@@ -1103,6 +1103,7 @@ test('a slow account render cannot overwrite a newer view', { skip: !playwright 
     await page.locator('#account [data-account-view="settings"]').click();
     await waitForAccountView(page, 'settings');
     await page.locator('#account [data-account-view="account"]').click();
+    await page.locator('#account-content .account-loading').waitFor();
     await page.waitForFunction(() => window.__delayedRead === true);
     await page.locator('#account [data-account-view="settings"]').click();
     await waitForAccountView(page, 'settings');
