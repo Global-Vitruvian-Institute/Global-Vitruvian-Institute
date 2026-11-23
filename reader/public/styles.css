@@ -429,6 +429,8 @@ input {
 }
 
 .pane-sheet {
+  display: flex;
+  flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
   height: 100%;
@@ -695,8 +697,12 @@ input {
 /* ------------------------------------------------------------- backlinks --- */
 
 .backlinks {
+  width: 100%;
   max-width: 545px;
-  margin: 3em auto 0;
+  /* The disclosure sits at the foot of a short note instead of hovering just
+     under the last sentence. Padding keeps the gap when there is no free space. */
+  margin: auto auto 0;
+  padding-top: 3em;
   font-family: var(--font-ui);
 }
 
@@ -1864,6 +1870,7 @@ input {
 :root[data-reading="page"] .pane-sheet {
   overflow: visible;
   height: auto;
+  min-height: calc(100vh - var(--header-height));
   padding: 56px 40px 96px;
 }
 
@@ -1878,6 +1885,8 @@ input {
 
 :root[data-reading="page"] .backlinks {
   max-width: 660px;
+  margin-top: auto;
+  padding-top: 3em;
 }
 
 @media (max-width: 800px) {
