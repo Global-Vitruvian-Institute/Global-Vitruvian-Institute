@@ -69,7 +69,7 @@ test('only a boolean activity:true is treated as an activity pane id', () => {
   assert.equal(isDemoPaneId('demo:account'), true);
   assert.equal(isDemoPaneId('demo:admin'), true);
   assert.equal(isDemoPaneId('Breath'), false);
-  assert.equal(demoPaneLabel('demo:account'), 'User info');
+  assert.equal(demoPaneLabel('demo:account'), 'User');
   assert.equal(demoPaneLabel('demo:admin'), 'Admin');
   assert.equal(demoPaneLabel('Breath'), null);
 });

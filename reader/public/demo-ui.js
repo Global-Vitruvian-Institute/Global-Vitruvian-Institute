@@ -34,6 +34,8 @@ import {
 import { APPEARANCES, appearanceLabel, currentAppearance, setAppearance } from './appearance.js';
 import { READING_MODES, currentReadingMode, readingModeLabel, setReadingMode } from './reading.js';
 import { addGuestEntry, claimGuestEntry, guestEntryFor, readGuestEntries, removeGuestEntries, upsertGuestEntry } from './guest.js';
+import { activityMetadata } from './activity-catalog.js';
+import { createActivityCollection } from './activity-collection.js';
 
 const EVIDENCE_ACCEPT = [
   ...['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'],
@@ -134,6 +136,226 @@ function definitionList(rows) {
     list.append(item);
   }
   return list;
+}
+
+/* --------------------------------------------- loading shell and scholarship --- */
+
+/** The heading each account region carries, shared with the loading shell. */
+const VIEW_HEADINGS = Object.freeze({ account: 'User', settings: 'Settings', admin: 'Admin' });
+
+function viewHeading(view) {
+  return VIEW_HEADINGS[view] ?? VIEW_HEADINGS.account;
+}
+
+/** A quiet, non-focusable placeholder bar. Never a number, never a control. */
+function loadingBar(className = 'account-loading-bar') {
+  const bar = el('div', className);
+  bar.setAttribute('aria-hidden', 'true');
+  return bar;
+}
+
+/** A static section heading with neutral skeleton geometry under it. */
+function loadingSection(title, lines, className = '') {
+  const node = el('section', `demo-section account-loading-section ${className}`.trim());
+  node.append(el('h2', 'demo-section-title account-loading-heading', title));
+  const bars = el('div', 'account-loading-bars');
+  bars.setAttribute('aria-hidden', 'true');
+  for (let index = 0; index < lines; index += 1) bars.append(loadingBar());
+  node.append(bars);
+  return node;
+}
+
+/**
+ * The account region's first paint, usable before the runtime store is chosen.
+ * It needs no store and no session: the view's own headings and quiet skeleton
+ * bars, so the page never opens empty and never guesses at the reader's data.
+ * `aria-busy` marks the region as still coming, and one visually-hidden status
+ * announces it exactly once.
+ */
+export function createAccountLoadingView(view = 'account', { session = null } = {}) {
+  const resolved = Object.hasOwn(VIEW_HEADINGS, view) ? view : 'account';
+  const root = el('div', 'account-loading');
+  root.dataset.accountLoading = resolved;
+  root.setAttribute('aria-busy', 'true');
+
+  const status = el('p', 'visually-hidden account-loading-status', resolved === 'account'
+    ? 'Loading activities'
+    : `Loading ${resolved}`);
+  status.setAttribute('role', 'status');
+  root.append(status);
+
+  const heading = el('h1', 'demo-title account-loading-title', viewHeading(resolved));
+  heading.tabIndex = -1;
+  root.append(heading);
+
+  if (resolved === 'settings') {
+    root.append(loadingSection('Reading', 2));
+    root.append(loadingSection('Appearance', 2));
+    root.append(loadingSection('Portfolio', 2));
+    return root;
+  }
+
+  if (resolved === 'admin') {
+    root.append(loadingSection('Participants', 3));
+    root.append(loadingSection('Submissions', 4));
+    return root;
+  }
+
+  // `session` is accepted so the caller can hand over what it already knows,
+  // but nothing here reads it: no name, no count and no control is guessed.
+  void session;
+  root.append(loadingSection('Your collection', 3, 'account-loading-collection'));
+  root.append(loadingSection('Activity history', 3));
+  root.append(loadingSection('Pinned portfolio', 2));
+  root.append(loadingSection('Your reading', 3));
+  root.append(buildScholarshipSection());
+  return root;
+}
+
+/**
+ * The future scholarship. It is intent, not an available programme: a disabled
+ * button and a plain status, with no dates, amounts, eligibility, application
+ * or selection policy. Nothing here reads the reader's activity, and nothing
+ * ties what they saved to an award.
+ */
+export function buildScholarshipSection() {
+  const node = section('Vitruvian scholarship');
+  node.dataset.accountSection = 'scholarship';
+  node.append(el('p', 'demo-lede',
+    'Planned enriching trips and shared experiences, with scholarship support so more young people can take part.'));
+  const actions = el('div', 'demo-actions');
+  const learn = button('Learn more', 'demo-button');
+  learn.disabled = true;
+  learn.setAttribute('aria-disabled', 'true');
+  actions.append(learn, el('span', 'demo-status demo-status-plain', 'Coming soon'));
+  node.append(actions);
+  return node;
+}
+
+/** The small written labels for one saved activity: subject, format, optional second badge. */
+function buildActivityTags(noteId) {
+  const meta = activityMetadata(noteId);
+  const list = el('ul', 'activity-tags');
+  list.dataset.subject = meta.subjectId;
+  list.dataset.format = meta.formatId;
+  list.append(el('li', `activity-tag activity-tag-${meta.colorKey}`, meta.subjectLabel));
+  list.append(el('li', 'activity-tag activity-tag-format', meta.formatLabel));
+  return list;
+}
+
+/** Guest entries that no account has claimed. */
+function unclaimedGuestEntries() {
+  return readGuestEntries().filter((entry) => !entry.accountId);
+}
+
+/** One browser-local entry, shown the same way in every history list. */
+function buildGuestRow(entry) {
+  const item = el('li', 'demo-row demo-row-guest');
+  const head = el('div', 'demo-row-head');
+  head.append(el('h3', 'demo-row-title', entry.noteTitle || entry.noteId));
+  head.append(el('span', 'demo-status demo-status-plain', 'Saved on this device'));
+  item.append(head);
+  item.append(el('p', 'demo-row-meta', formatTimestamp(entry.at)));
+  item.append(buildActivityTags(entry.noteId));
+  if (entry.reflection) item.append(el('p', 'demo-reflection', entry.reflection));
+  return item;
+}
+
+/**
+ * The Settings portfolio row. It states the current state and the future
+ * option only: no storage, backend or privacy behaviour changes, and no data is
+ * exposed.
+ */
+function buildPortfolioSettings() {
+  const node = section('Portfolio');
+  node.dataset.accountSection = 'portfolio';
+  const row = el('div', 'demo-actions');
+  row.append(el('span', 'demo-label', 'Public portfolio'));
+  row.append(el('span', 'demo-status demo-status-plain', 'Private'));
+  const makePublic = button('Make public', 'demo-button');
+  makePublic.disabled = true;
+  makePublic.setAttribute('aria-disabled', 'true');
+  row.append(makePublic, el('span', 'demo-caption', 'Coming soon'));
+  node.append(row);
+  return node;
+}
+
+/* ------------------------------------------------------- activity log link --- */
+
+/**
+ * The account URL for one saved activity: the current note, stack and hash are
+ * preserved, and only the region and the section to open are added, relative to
+ * the current project path.
+ */
+function activityLogHref() {
+  if (typeof window === 'undefined' || !window.location) {
+    return './?view=account&section=activity-history';
+  }
+  const params = new URLSearchParams(window.location.search ?? '');
+  params.set('view', 'account');
+  params.set('section', 'activity-history');
+  const query = params.toString();
+  return `./${query ? `?${query}` : ''}${window.location.hash ?? ''}`;
+}
+
+/** The short post-save CTA. It starts hidden; the caller shows it. */
+function buildActivityLogLink() {
+  const link = el('a', 'activity-log-link', 'View activity log');
+  link.href = activityLogHref();
+  link.dataset.accountView = 'account';
+  link.dataset.accountSection = 'activity-history';
+  link.hidden = true;
+  return link;
+}
+
+function refreshActivityLogLink(link) {
+  if (link) link.href = activityLogHref();
+}
+
+/** Show the CTA beside a note's legacy `Log activity` control, idempotently. */
+function showActivityLogLinkForNote(noteId) {
+  const log = [...document.querySelectorAll('.demo-log-activity')]
+    .find((node) => node.dataset.noteId === noteId);
+  const wrap = log?.closest('.demo-activity-actions');
+  if (!wrap) return null;
+  let link = wrap.querySelector('.activity-log-link');
+  if (!link) {
+    link = buildActivityLogLink();
+    wrap.append(link);
+  }
+  link.hidden = false;
+  refreshActivityLogLink(link);
+  return link;
+}
+
+/* --------------------------------------------------- collection lifecycle --- */
+
+/**
+ * One live pebble pile per host article. A rerender, a release or leaving the
+ * region disposes the old pile first, so a detached view's animation frame or
+ * observer cannot keep running. The settled layout cache is deliberately left
+ * alone: it is keyed by scope id, and replaying a scope's own ids is what it is
+ * for.
+ */
+const collectionByHost = new WeakMap();
+
+function disposeCollection(host) {
+  if (!host) return;
+  const collection = collectionByHost.get(host);
+  if (!collection) return;
+  try {
+    collection.dispose();
+  } catch {
+    /* the pile is already gone */
+  }
+  collectionByHost.delete(host);
+}
+
+function mountCollection(host, records, scopeId) {
+  disposeCollection(host);
+  const collection = createActivityCollection(records, { scopeId });
+  collectionByHost.set(host, collection);
+  return collection;
 }
 
 export function createDemoUi({
@@ -588,6 +810,9 @@ export function createDemoUi({
       marker = el('p', 'demo-caption demo-guest-marker', 'Saved on this device. Log in to keep it.');
       log.after(marker);
     }
+    // A restored browser-local entry also offers the log, so the reader can see
+    // the pile without going through the dialog again.
+    showActivityLogLinkForNote(noteId);
   }
 
   let guestMergePromise = null;
@@ -675,7 +900,7 @@ export function createDemoUi({
     mergeFailure = kept ? { kept, accountId: account.id } : null;
     if (merged || kept) notifyChange();
     if (merged) announce(`${merged} saved ${merged === 1 ? 'activity' : 'activities'} added to your account.`);
-    if (kept) announce('Some responses are still on this device. Try again from User info to finish moving them to your account.');
+    if (kept) announce('Some responses are still on this device. Try again from User to finish moving them to your account.');
     return { merged, kept };
   }
 
@@ -806,6 +1031,9 @@ export function createDemoUi({
         announce(remote
           ? 'Activity logged and saved as pending review.'
           : 'Activity logged and saved as pending review in this browser.');
+        // The dialog closes, but the short log link stays in the article beside
+        // the control that opened it.
+        showActivityLogLinkForNote(note.id);
         notifyChange();
       } catch (error) {
         // The form keeps everything the reader typed or chose.
@@ -897,6 +1125,7 @@ export function createDemoUi({
       submission.evidence.length ? `${submission.evidence.length} file${submission.evidence.length === 1 ? '' : 's'}` : null,
     ].filter(Boolean);
     item.append(el('p', 'demo-row-meta', meta.join(' · ')));
+    item.append(buildActivityTags(submission.noteId));
 
     if (submission.reflection) item.append(el('p', 'demo-reflection', submission.reflection));
     else item.append(el('p', 'demo-caption', 'No written reflection. Evidence only.'));
@@ -1002,64 +1231,112 @@ export function createDemoUi({
   /* ------------------------------------------------------ view: account --- */
 
   async function loadAccountData() {
-    const submissions = session ? await store.listSubmissions({ accountId: session.id }) : [];
+    // Snapshot the account once: a sign-out or an account switch mid-read must
+    // not mix one reader's submissions with another's.
+    const account = session;
+    const accountId = account?.id ?? null;
+    const [submissions, stats] = await Promise.all([
+      accountId ? store.listSubmissions({ accountId }) : Promise.resolve([]),
+      accountId ? store.getStats(accountId) : Promise.resolve(null),
+    ]);
     const evidence = new Map();
     const events = new Map();
-    for (const submission of submissions) {
-      evidence.set(submission.id, await store.listEvidence(submission.id));
-      events.set(submission.id, await store.listReviewEvents(submission.id));
+    // The independent evidence and history reads run together; one note's files
+    // never wait on another note's history.
+    await Promise.all(submissions.map(async (submission) => {
+      const [files, history] = await Promise.all([
+        store.listEvidence(submission.id),
+        store.listReviewEvents(submission.id),
+      ]);
+      evidence.set(submission.id, files);
+      events.set(submission.id, history);
+    }));
+    return { submissions, evidence, events, stats, accountId };
+  }
+
+  /** The one history list: guest rows and account rows share the same shape. */
+  function buildActivityHistory(article, data, generation, { guest }) {
+    const history = section('Activity history');
+    history.id = 'activity-history';
+    history.dataset.accountSection = 'activity-history';
+    const heading = history.querySelector('.demo-section-title');
+    if (heading) heading.tabIndex = -1;
+
+    const records = guest ? unclaimedGuestEntries().slice().reverse() : data.submissions;
+    if (!records.length) {
+      history.append(el('p', 'demo-caption', 'No activity logged yet.'));
+      return history;
     }
-    const stats = session ? await store.getStats(session.id) : null;
-    return { submissions, evidence, events, stats };
+    const list = el('ul', 'demo-list');
+    for (const record of records) {
+      if (guest) {
+        list.append(buildGuestRow(record));
+      } else {
+        list.append(buildSubmissionRow(
+          article,
+          record,
+          data.evidence.get(record.id) ?? [],
+          data.events.get(record.id) ?? [],
+          { viewer: 'owner', generation },
+        ));
+      }
+    }
+    history.append(list);
+    return history;
+  }
+
+  /** The guest's one quiet way in, kept below the collection and the history. */
+  function buildGuestSignIn() {
+    const signIn = section('Sign in');
+    signIn.dataset.accountSection = 'sign-in';
+    signIn.append(el('p', 'demo-lede', remote
+      ? 'Keep your responses in your portfolio with a one-time email link. No password.'
+      : 'Keep your responses in your portfolio. Any address works; no password, and no email is sent.'));
+    const built = buildSignInForm({
+      idPrefix: 'demo-pane-signin',
+      onSignedIn: () => notifyChange(),
+    });
+    signIn.append(built.form);
+    return signIn;
   }
 
   function buildAccountView(article, data, generation) {
     const fragment = document.createDocumentFragment();
-    fragment.append(el('h1', 'demo-title', 'User info'));
+    fragment.append(el('h1', 'demo-title', 'User'));
 
-    if (!session) {
-      fragment.append(el('p', 'demo-lede',
-        'Sign in with an email address to log activities and keep a portfolio. '
-        + (remote
-          ? 'This preview uses a one-time email link and no password.'
-          : 'This is a local demo: there is no password, and no email is sent.')));
-      const built = buildSignInForm({
-        idPrefix: 'demo-pane-signin',
-        onSignedIn: () => notifyChange(),
-      });
-      fragment.append(built.form);
+    const guest = !session;
+    const records = guest ? unclaimedGuestEntries() : data.submissions;
 
-      const saved = readGuestEntries().filter((entry) => !entry.accountId);
-      if (saved.length) {
-        const local = section('Saved on this device');
-        const list = el('ul', 'demo-list');
-        for (const entry of saved.slice().reverse()) {
-          const item = el('li', 'demo-row');
-          item.append(el('h3', 'demo-row-title', entry.noteTitle));
-          item.append(el('p', 'demo-row-meta', `${formatTimestamp(entry.at)} · Waiting for an account`));
-          if (entry.reflection) item.append(el('p', 'demo-reflection', entry.reflection));
-          list.append(item);
-        }
-        local.append(list);
-        local.append(el('p', 'demo-caption', 'Log in above to keep these in your portfolio.'));
-        fragment.append(local);
-      }
+    // The reader's own pile opens the page, and it is the same section for a
+    // guest and for a signed-in reader: nothing here waits on a login.
+    const collection = mountCollection(article, records, session?.id ?? 'guest');
+    collection.element.dataset.accountSection = 'your-collection';
+    fragment.append(collection.element);
 
+    fragment.append(buildActivityHistory(article, data, generation, { guest }));
+
+    if (guest) {
+      if (data.accountUnavailable) {
+        const unavailable = section('Account unavailable');
+        const retry = button('Try again', 'demo-button');
+        retry.addEventListener('click', async () => {
+          retry.disabled = true;
+          failure = null;
+          initPromise = null;
+          await init();
+          notifyChange();
+        });
+        unavailable.append(retry);
+        fragment.append(unavailable);
+      } else fragment.append(buildGuestSignIn());
+      fragment.append(buildScholarshipSection());
       if (!remote) fragment.append(el('p', 'demo-note', disclosureText()));
       return fragment;
     }
 
-    fragment.append(el('p', 'demo-lede', `Signed in as ${session.email}.`));
-    if (session.synthetic) {
-      fragment.append(el('p', 'demo-caption', 'Synthetic demo participant, seeded in this browser.'));
-    } else if (!remote) {
-      fragment.append(el('p', 'demo-caption', 'Local account in this browser.'));
-    }
-
-    // The portfolio and history are the point of this view; the reading
-    // statistics are a secondary footnote below them.
     const pinned = data.submissions.filter((submission) => submission.pinned);
     const portfolio = section('Pinned portfolio');
+    portfolio.dataset.accountSection = 'pinned-portfolio';
     if (!pinned.length) {
       portfolio.append(el('p', 'demo-caption', 'Nothing pinned yet.'));
     } else {
@@ -1069,6 +1346,7 @@ export function createDemoUi({
         card.append(el('h3', 'demo-gallery-title', submission.noteTitle || submission.noteId));
         card.append(el('span', `demo-status demo-status-${submission.status}`, statusLabel(submission.status)));
         card.append(el('p', 'demo-gallery-meta', formatTimestamp(submission.createdAt)));
+        card.append(buildActivityTags(submission.noteId));
         if (submission.reflection) {
           const excerpt = submission.reflection.length > 120
             ? `${submission.reflection.slice(0, 119)}…`
@@ -1081,28 +1359,11 @@ export function createDemoUi({
     }
     fragment.append(portfolio);
 
-    const history = section('Activity history');
-    if (!data.submissions.length) {
-      history.append(el('p', 'demo-caption', 'No activity logged yet.'));
-    } else {
-      const list = el('ul', 'demo-list');
-      for (const submission of data.submissions) {
-        list.append(buildSubmissionRow(
-          article,
-          submission,
-          data.evidence.get(submission.id) ?? [],
-          data.events.get(submission.id) ?? [],
-          { viewer: 'owner', generation },
-        ));
-      }
-      history.append(list);
-    }
-    fragment.append(history);
-
     // Entries the last merge could not import are still in this browser. Say so
     // plainly and offer the retry, rather than showing an empty portfolio.
     if (mergeFailure?.kept && mergeFailure.accountId === session.id) {
       const pending = section('Saved on this device');
+      pending.dataset.accountSection = 'pending-merge';
       pending.append(el('p', 'demo-caption',
         `${mergeFailure.kept} saved ${mergeFailure.kept === 1 ? 'activity is' : 'activities are'} `
         + 'still on this device. Try again to finish moving them to your account.'));
@@ -1125,6 +1386,7 @@ export function createDemoUi({
     const summary = summarizeStats(data.stats);
     const counts = countByStatus(data.submissions);
     const reading = section('Your reading');
+    reading.dataset.accountSection = 'your-reading';
     reading.append(definitionList([
       ['Active time', formatDuration(summary.activeMs)],
       ['Pages explored', String(summary.pagesExplored)],
@@ -1138,6 +1400,13 @@ export function createDemoUi({
     fragment.append(reading);
 
     const account = section('Account');
+    account.dataset.accountSection = 'account';
+    account.append(el('p', 'demo-caption', `Signed in as ${session.email}.`));
+    if (session.synthetic) {
+      account.append(el('p', 'demo-caption', 'Synthetic demo participant, seeded in this browser.'));
+    } else if (!remote) {
+      account.append(el('p', 'demo-caption', 'Local account in this browser.'));
+    }
     const actions = el('div', 'demo-actions');
     const signOut = button('Sign out', 'demo-button');
     signOut.addEventListener('click', async () => {
@@ -1161,11 +1430,13 @@ export function createDemoUi({
 
     const clear = remote ? null : button('Clear local demo data', 'demo-button');
     if (clear) {
-    clear.addEventListener('click', () => openClearDataDialog());
-    actions.append(clear);
+      clear.addEventListener('click', () => openClearDataDialog());
+      actions.append(clear);
     }
     account.append(actions);
     fragment.append(account);
+
+    fragment.append(buildScholarshipSection());
     return fragment;
   }
 
@@ -1287,8 +1558,10 @@ export function createDemoUi({
     field.append(label, select, hint);
     appearance.append(field);
     appearance.append(el('p', 'demo-caption',
-      'Presets change colour only. The reader stays light either way: there is no dark mode and no automatic switch.'));
+      'Presets change colour only. No automatic switch follows your system setting.'));
     fragment.append(appearance);
+
+    fragment.append(buildPortfolioSettings());
 
     if (!remote) fragment.append(el('p', 'demo-note', disclosureText()));
     return fragment;
@@ -1305,10 +1578,16 @@ export function createDemoUi({
     const byEmail = new Map(accounts.map((account) => [account.id, account.email]));
     const evidence = new Map();
     const events = new Map();
-    for (const submission of submissions) {
-      evidence.set(submission.id, await store.listEvidence(submission.id));
-      events.set(submission.id, await store.listReviewEvents(submission.id));
-    }
+    // Every submission's evidence and history reads run together, so a long
+    // list is one round of parallel reads instead of a sequential walk.
+    await Promise.all(submissions.map(async (submission) => {
+      const [files, history] = await Promise.all([
+        store.listEvidence(submission.id),
+        store.listReviewEvents(submission.id),
+      ]);
+      evidence.set(submission.id, files);
+      events.set(submission.id, history);
+    }));
     const statsByAccount = new Map(stats.map((record) => [record.accountId, record]));
     return { accounts, submissions, byEmail, evidence, events, statsByAccount };
   }
@@ -1324,7 +1603,7 @@ export function createDemoUi({
     if (!session || !canReview(session)) {
       fragment.append(el('p', 'demo-caption', remote
         ? 'Sign in with a reviewer or admin account to review submissions.'
-        : `Sign in as ${DEMO_ADMIN_EMAIL} from User info to review submissions.`));
+        : `Sign in as ${DEMO_ADMIN_EMAIL} from User to review submissions.`));
       if (!remote) fragment.append(el('p', 'demo-note', disclosureText()));
       return fragment;
     }
@@ -1392,7 +1671,7 @@ export function createDemoUi({
 
   function failureBlock(error) {
     const wrap = el('div', 'demo-failure');
-    wrap.append(el('h1', 'demo-title', 'User info is unavailable'));
+    wrap.append(el('h1', 'demo-title', 'Account unavailable'));
     wrap.append(el('p', 'demo-lede',
       error?.message
       || 'This browser did not give the demo any local storage, so accounts and submissions cannot be shown.'));
@@ -1448,20 +1727,29 @@ export function createDemoUi({
     const stillCurrent = () => isCurrentGeneration(session?.id ?? null) && isCurrent();
 
     revokePaneUrls(article);
-    article.replaceChildren();
-
-    await init();
-    if (!stillCurrent()) return false;
+    disposeCollection(article);
 
     // Appearance is a browser-local preference with no account behind it, so
-    // Settings renders even when the demo store never opened.
+    // Settings renders immediately and never waits on the store.
     if (view === 'settings') {
       article.replaceChildren(buildSettingsView());
       return true;
     }
 
+    // Headings and quiet skeleton geometry instead of an empty region, painted
+    // before the store is opened or any account data is read.
+    article.replaceChildren(createAccountLoadingView(view, { session }));
+
+    await init();
+    if (!stillCurrent()) return false;
+
     if (!ready) {
-      article.append(failureBlock(failure));
+      // Browser-only responses do not depend on the account database.
+      if (view === 'account' && unclaimedGuestEntries().length) {
+        article.replaceChildren(buildAccountView(article, {
+          submissions: [], evidence: new Map(), events: new Map(), stats: null, accountUnavailable: true,
+        }, generation));
+      } else article.replaceChildren(failureBlock(failure));
       return true;
     }
 
@@ -1521,7 +1809,9 @@ export function createDemoUi({
    */
   function refreshInlineActivity(controller) {
     const account = session;
-    const { field, status, save, login, privacy } = controller;
+    const {
+      field, status, save, login, privacy, logLink,
+    } = controller;
     if (controller.sessionId && controller.sessionId !== (account?.id ?? null)) {
       field.control.value = '';
       field.setError(null);
@@ -1545,6 +1835,10 @@ export function createDemoUi({
           ? (field.control.value.trim() === previous.reflection ? `${label} · Saved to your account.` : 'Unsaved changes.')
           : '';
       }
+      // The log link follows this control's own save, and hides when the
+      // account changed and the response is no longer in this browser.
+      refreshActivityLogLink(logLink);
+      logLink.hidden = !mine;
       return;
     }
 
@@ -1560,6 +1854,8 @@ export function createDemoUi({
     if (!controller.saving) status.textContent = controller.guestSaved
       ? (field.control.value.trim() === controller.guestSaved ? 'Saved on this device.' : 'Unsaved changes.')
       : '';
+    refreshActivityLogLink(logLink);
+    logLink.hidden = !controller.guestSaved;
   }
 
   /** Refresh every embedded activity in the document after a session change. */
@@ -1598,7 +1894,8 @@ export function createDemoUi({
     const save = el('button', 'demo-button demo-button-primary inline-activity-save', 'Save response');
     save.type = 'submit';
     const login = button('Log in', 'demo-button inline-activity-login');
-    actions.append(save, status, login);
+    const logLink = buildActivityLogLink();
+    actions.append(save, status, logLink, login);
     form.append(field.wrap, privacy, actions);
 
     const prompt = block.querySelector('.inline-activity-prompt');
@@ -1606,7 +1903,7 @@ export function createDemoUi({
     else block.append(form);
 
     const controller = {
-      block, noteId, noteTitle, field, privacy, status, save, login,
+      block, noteId, noteTitle, field, privacy, status, save, login, logLink,
       saving: false, guestSaved: null, guestHydrated: false, lastSaved: null, sessionId: null,
     };
     inlineByBlock.set(block, controller);
@@ -1735,7 +2032,11 @@ export function createDemoUi({
   }
 
   function releasePane(host) {
-    revokePaneUrls(contentHost(host) ?? host);
+    const article = contentHost(host) ?? host;
+    // A pile in a region that is leaving must stop animating before its DOM
+    // goes, or its frame or observer would keep the detached view alive.
+    disposeCollection(article);
+    revokePaneUrls(article);
   }
 
   return {

@@ -73,7 +73,7 @@ export function mapStorageError(error) {
   const name = error?.name;
   if (name === 'QuotaExceededError') {
     return new DemoStorageFullError(
-      'This browser has no room left for the demo. Clear local demo data from User info, then try again.',
+      'This browser has no room left for the demo. Clear local demo data from User, then try again.',
       { cause: error },
     );
   }

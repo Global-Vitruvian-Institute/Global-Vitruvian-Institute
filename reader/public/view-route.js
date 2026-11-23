@@ -95,9 +95,13 @@ export function parseViewRoute(search = '', hash = '') {
   const canonical = view === VIEW_READER
     ? rawView === null || rawView === VIEW_READER
     : rawView === view;
-  const changed = Boolean(legacy) || !canonical;
+  // A log destination is separate from the reader's heading fragment, so
+  // opening the log never overwrites the place the reader will return to.
+  const rawSection = params.get('section');
+  const section = view === VIEW_ACCOUNT && rawSection === 'activity-history' ? rawSection : null;
+  const changed = Boolean(legacy) || !canonical || (rawSection !== null && rawSection !== section);
 
-  return { ids, view, legacy, hash: stripHash(hash), named, changed };
+  return { ids, view, legacy, hash: stripHash(hash), section, named, changed };
 }
 
 /**
@@ -107,12 +111,13 @@ export function parseViewRoute(search = '', hash = '') {
  * `view=reader` is the *absence* of the parameter, so a reading stack has
  * exactly one URL however it was reached.
  */
-export function buildRouteQuery({ ids = [], view = VIEW_READER, hash = '' } = {}) {
+export function buildRouteQuery({ ids = [], view = VIEW_READER, hash = '', section = null } = {}) {
   const [first, ...rest] = [...ids];
   const params = new URLSearchParams();
   if (first) params.set(NOTE_PARAM, first);
   for (const id of rest) params.append(STACK_PARAM, id);
   if (isAccountView(view)) params.set(VIEW_PARAM, view);
+  if (view === VIEW_ACCOUNT && section === 'activity-history') params.set('section', section);
   const query = params.toString();
   const fragment = hash ? `#${stripHash(hash)}` : '';
   return `${query ? `?${query}` : ''}${fragment}`;

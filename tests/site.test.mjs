@@ -204,6 +204,11 @@ test('the build publishes only a boolean activity flag and no raw frontmatter', 
     assert.match(shell, /href="\.\/styles\.css"/);
     assert.match(shell, /src="\.\/app\.js"/);
     assert.match(shell, /href="\.\/"/);
+    assert.match(shell, /href="\.\/activity-collection\.css"/);
+    for (const asset of ['activity-catalog.js', 'activity-collection.js', 'activity-collection.css']) {
+      assert.equal(await readFile(join(out, asset), 'utf8'), await readFile(join('reader/public', asset), 'utf8'),
+        `${asset} ships unchanged on the static project path`);
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(out, { recursive: true, force: true });
@@ -344,6 +349,8 @@ test('the header exposes exactly one account entry, a dialog host and one accoun
   assert.equal((html.match(/id="account"/g) ?? []).length, 1);
   // Settings and the authorized Admin entry live inside the account region.
   assert.match(html, /<nav class="account-nav" aria-label="Account views">/);
+  assert.match(html, /data-account-view="account"[^>]*>User</);
+  assert.doesNotMatch(html, />User info</);
   assert.match(html, /data-account-view="settings"[^>]*>Settings</);
   assert.match(html, /data-account-view="admin"[^>]*hidden>Admin</);
   assert.match(html, /data-account-back[^>]*><span aria-hidden="true">←<\/span> Return to notes<\/a>/);
@@ -353,6 +360,25 @@ test('the header exposes exactly one account entry, a dialog host and one accoun
   // The account region has no spine and no pane-close control.
   const account = html.slice(html.indexOf('id="account"'), html.indexOf('id="preview"'));
   assert.doesNotMatch(account, /pane-spine|pane-close|class="pane"/);
+});
+
+test('account first paint precedes async startup and Settings does not await database init', async () => {
+  const app = await readFile('reader/public/app.js', 'utf8');
+  const ui = await readFile('reader/public/demo-ui.js', 'utf8');
+  const render = app.slice(app.indexOf('async function renderAccountView'), app.indexOf('function focusAccountHeading'));
+  assert.ok(render.indexOf('replaceChildren(createAccountLoadingView(') >= 0);
+  assert.ok(render.indexOf('replaceChildren(createAccountLoadingView(') < render.indexOf('await demoBoot'));
+  const pane = ui.slice(ui.indexOf('async function renderPane('), ui.indexOf('/* ---------------------------------------------------- inline activities'));
+  assert.ok(pane.indexOf("if (view === 'settings')") >= 0);
+  assert.ok(pane.indexOf('buildSettingsView()') < pane.indexOf('await init()'));
+  assert.ok(pane.indexOf('replaceChildren(createAccountLoadingView(') < pane.indexOf('await init()'));
+  assert.ok(pane.indexOf('replaceChildren(createAccountLoadingView(') < pane.indexOf('await loadAccountData()'));
+  // Explicit account navigation targets the history heading, never the note's
+  // retained reading fragment. Behavioral focus/scroll coverage is in Playwright.
+  assert.match(render, /state\.accountSection === 'activity-history'/);
+  assert.match(render, /querySelector\('#activity-history h2'\)/);
+  assert.match(render, /historyHeading\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(render, /els\.account\.scrollTo/);
 });
 
 test('demo styling is namespaced, reuses the reader tokens and stays light', async () => {

@@ -2,7 +2,7 @@
 
 A static reader for the Markdown in `vault/`. Edit notes in Obsidian; Markdown is the source of truth.
 
-Notes open one page at a time by default: wikilinks are ordinary links, and browser Back is the reading path. **Settings → Reading** offers stacked tabs as an advanced mode, where earlier notes stay open to the left. Search, backlinks, hover previews, and full-page User info / Settings / Admin are available in both modes.
+Notes open one page at a time by default: wikilinks are ordinary links, and browser Back is the reading path. **Settings → Reading** offers stacked tabs as an advanced mode, where earlier notes stay open to the left. Search, backlinks, hover previews, and full-page User / Settings / Admin are available in both modes.
 
 A note may declare its place in the guide with `parents` frontmatter:
 
@@ -69,12 +69,12 @@ The account views are a **separate full page**, not a pane in the reading stack:
 
 ```text
 ?note=Breath&stackedNotes=Movement                the reader
-?note=Breath&stackedNotes=Movement&view=account   User info
+?note=Breath&stackedNotes=Movement&view=account   User
 ?note=Breath&stackedNotes=Movement&view=settings  Settings
 ?note=Breath&stackedNotes=Movement&view=admin     Admin (authorized accounts only)
 ```
 
-**Return to notes** removes only `view`, so the reading stack, its horizontal position and every note's scroll offset come back exactly as they were. Reload, browser Back/Forward and direct links all reproduce the same page, and `?view=…` works under a project subpath because it is an ordinary query parameter. User info stays in the header; Settings and the authorized Admin entry live in the account page's own small navigation row. Header **Random** and **Search** still work from any account page — choosing a note returns to the reader.
+**Return to notes** removes only `view`, so the reading stack, its horizontal position and every note's scroll offset come back exactly as they were. Reload, browser Back/Forward and direct links all reproduce the same page, and `?view=…` works under a project subpath because it is an ordinary query parameter. User stays in the header; Settings and the authorized Admin entry live in the account page's own small navigation row. Header **Random** and **Search** still work from any account page — choosing a note returns to the reader.
 
 **Settings** offers three built-in light appearances, with no account and no dependency:
 
@@ -113,7 +113,7 @@ This section applies only when `reader/public/supabase-config.json` has `"mode":
 
 ### Signing in
 
-1. Open **User info** in the top right.
+1. Choose **Log in** in the top right (or open the settings gear, then **User**).
 2. Enter any email address (for example `you@example.com`) and choose *Continue*.
 3. Type the demo verification code that is printed on screen: **`482913`**.
 
@@ -124,7 +124,10 @@ There is no password and no verification email; the code is displayed precisely 
 - An Obsidian-style `> [!activity] Title` callout embeds an activity in its note. Orientation's **What brought you here?** prompt has a response field and save button directly beneath it—no separate reflection page or sign-in gate. Guest responses stay in this browser and move into the account on sign-in; account responses are visible to reviewers. Hover previews show the prompt only, never a form.
 - Standalone exercise notes (`Breath`, `Movement`, `Money check-in`) still use `activity: true` for the *Log activity* dialog, including file evidence. `scripts/build.mjs` publishes only the boolean, not raw frontmatter.
 - A submission needs a trimmed reflection, a file, or both. New submissions are saved as **pending**.
-- **User info** shows a pinned portfolio gallery, then the complete activity history. Any of your own submissions can be pinned or unpinned whatever its review status, and pinned items remain in the history too.
+- **User** paints its headings and loading skeletons immediately, then shows **Your collection**, the complete **Activity history**, **Pinned portfolio**, **Your reading** and account controls. Guest work is also visible without signing in; saved responses expose a **View activity log** link. **Return to notes** preserves the reading stack, fragment and actual scroll positions.
+- Collection subjects and activity formats are independently editable in `reader/public/activity-catalog.js`. One equal-area pebble represents one activity; exact labelled counts remain available without colour matching, and motion respects reduced-motion preferences. No balance targets or inferred effort scores are used. See [collection design and sources](docs/activity-collection.md).
+- Any of your own submissions can be pinned or unpinned whatever its review status, and pinned items remain in the history too. Pinning and reviewing do not add to the collection.
+- **Public portfolio** in Settings and **Vitruvian scholarship** near the bottom of User are **Coming soon**, with disabled controls. Nothing is published and no applications are accepted.
 - The admin page lists the seeded synthetic participants and any local accounts created in this browser, with per-account pages explored, active time and submissions. Reviews move a submission between **pending**, **verified** and **changes requested**, requesting changes requires feedback, and every review is kept as a timestamped history event.
 
 ### Evidence files
@@ -140,7 +143,7 @@ Active time and distinct pages are measured only for the signed-in reader, only 
 
 ### Clearing local data
 
-**User info → Clear local demo data** asks for confirmation, then removes every local account, submission, uploaded file and reading statistic for this origin and restores the synthetic fixtures. Clearing browser storage for the site has the same effect.
+**User → Clear local demo data** asks for confirmation, then removes every local account, submission, uploaded file and reading statistic for this origin and restores the synthetic fixtures. Clearing browser storage for the site has the same effect.
 
 ## Production
 

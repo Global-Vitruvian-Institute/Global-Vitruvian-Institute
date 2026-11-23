@@ -156,6 +156,41 @@ test('the hash survives a region change and is stripped of its marker', () => {
   assert.equal(fragment, 'A heading');
 });
 
+test('activity history section round-trips independently of the reading fragment', () => {
+  const route = {
+    ids: ['Orientation', 'Breath'], view: VIEW_ACCOUNT,
+    section: 'activity-history', hash: 'what-brought-you-here',
+  };
+  const query = buildRouteQuery(route);
+  assert.equal(query, '?note=Orientation&stackedNotes=Breath&view=account&section=activity-history#what-brought-you-here');
+  const [search, fragment] = query.split('#');
+  const parsed = parseViewRoute(search, `#${fragment}`);
+  assert.deepEqual(parsed.ids, route.ids);
+  assert.equal(parsed.section, route.section);
+  assert.equal(parsed.hash, route.hash);
+  assert.equal(parsed.changed, false, 'known canonical routes retain the section');
+  assert.equal(buildRouteQuery({ ...parsed, view: VIEW_READER }),
+    '?note=Orientation&stackedNotes=Breath#what-brought-you-here',
+    'Return removes both account keys, not the note fragment');
+  assert.equal(parseViewRoute('?view=account', '#activity-history').section, null,
+    'a reading fragment is never interpreted as an account section');
+});
+
+test('invalid sections are removed, including valid sections on other regions', () => {
+  for (const view of [VIEW_READER, VIEW_ACCOUNT, VIEW_SETTINGS, VIEW_ADMIN]) {
+    for (const section of ['', 'bogus', 'Activity-history', ' activity-history ', 'activity-history']) {
+      if (view === VIEW_ACCOUNT && section === 'activity-history') continue;
+      const parsed = parseViewRoute(`?note=Breath&view=${view}&section=${encodeURIComponent(section)}`, '#Reading');
+      assert.equal(parsed.section, null, `${view}/${JSON.stringify(section)}`);
+      assert.equal(parsed.changed, true);
+      const canonical = buildRouteQuery(parsed);
+      assert.equal(canonical.includes('section='), false);
+      assert.equal(parseViewRoute(canonical.split('#')[0], '#Reading').changed, false);
+      assert.equal(parsed.hash, 'Reading');
+    }
+  }
+});
+
 test('the query is relative, so a project subpath needs no server route', () => {
   // Nothing here begins with `/`: the caller prefixes `./`, which is what keeps
   // `https://host/vitruvian/` working without a server-side account path.

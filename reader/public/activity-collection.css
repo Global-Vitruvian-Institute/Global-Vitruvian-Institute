@@ -1,0 +1,179 @@
+/*
+ * activity-collection.css — the saved-activity pebble pile.
+ *
+ * Everything here is scoped to `.activity-collection`. The only shared values
+ * are the reader's own tokens (--ink, --muted, --surface, --surface-quiet,
+ * --rule, --radius, --font-ui); the five muted categorical colours and the
+ * neutral are defined on the section and used by the pebbles, the legend
+ * swatches and nothing else.
+ *
+ * The motion itself is in activity-collection.js. There are no CSS animations,
+ * no gradients and no shiny glass: the pile is drawn and settled by the engine,
+ * and reduced motion is handled there by jumping to the settled result.
+ */
+
+.activity-collection {
+  /* Muted categorical fills. Chosen to read quietly on a light page. */
+  --activity-subject-physical: #4b6f9e; /* blue */
+  --activity-subject-mental: #6b8a6d; /* sage */
+  --activity-subject-intellectual: #97694b; /* clay */
+  --activity-subject-financial: #9c8339; /* ochre */
+  --activity-subject-social: #7b5b86; /* plum */
+  --activity-subject-neutral: #8b9099; /* neutral grey */
+  --activity-pebble-edge: rgba(23, 30, 40, 0.18);
+
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* The reader's one dark template, applied to <html> before first paint. */
+:root[data-appearance="dark"] .activity-collection {
+  --activity-subject-physical: #83a6d3;
+  --activity-subject-mental: #94b596;
+  --activity-subject-intellectual: #c7926c;
+  --activity-subject-financial: #c9ac5c;
+  --activity-subject-social: #ab84b6;
+  --activity-subject-neutral: #8f959d;
+  --activity-pebble-edge: rgba(0, 0, 0, 0.45);
+}
+
+.note-content .activity-collection-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.note-content .activity-collection-count {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A shallow vessel, not a jar: a quiet floor for the pebbles to sit on. */
+.activity-collection-vessel {
+  position: relative;
+  height: var(--activity-collection-height, 180px);
+  margin-top: 10px;
+  overflow: hidden;
+  background: var(--surface-quiet);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius, 5px);
+}
+
+.activity-collection-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.activity-collection-pebble {
+  stroke: var(--activity-pebble-edge);
+  stroke-width: 0.75;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.activity-collection-pebble-physical { fill: var(--activity-subject-physical); }
+.activity-collection-pebble-mental { fill: var(--activity-subject-mental); }
+.activity-collection-pebble-intellectual { fill: var(--activity-subject-intellectual); }
+.activity-collection-pebble-financial { fill: var(--activity-subject-financial); }
+.activity-collection-pebble-social { fill: var(--activity-subject-social); }
+.activity-collection-pebble-neutral { fill: var(--activity-subject-neutral); }
+
+/* An empty pile says so once, quietly. No placeholder pebbles are drawn. */
+.note-content .activity-collection-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.activity-collection-empty[hidden] { display: none; }
+
+/*
+ * Written labels and exact counts make the legend usable without matching
+ * a colour. A zero is drawn like any other count.
+ */
+.note-content .activity-collection-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-content .activity-collection-legend li,
+.note-content .activity-collection-formats li { margin: 0; }
+
+.activity-collection-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.activity-collection-swatch { flex: none; }
+
+.activity-collection-shape-physical { fill: var(--activity-subject-physical); }
+.activity-collection-shape-mental { fill: var(--activity-subject-mental); }
+.activity-collection-shape-intellectual { fill: var(--activity-subject-intellectual); }
+.activity-collection-shape-financial { fill: var(--activity-subject-financial); }
+.activity-collection-shape-social { fill: var(--activity-subject-social); }
+.activity-collection-shape-neutral { fill: var(--activity-subject-neutral); }
+
+.activity-collection-legend-count {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A thin base line closes the section; nothing is scored below it. */
+.activity-collection-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.note-content .activity-collection-more {
+  margin: 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-collection-more[hidden] { display: none; }
+
+.note-content .activity-collection-formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-collection-formats[hidden] { display: none; }
+
+.activity-collection-format { color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-collection-svg { scroll-behavior: auto; }
+}

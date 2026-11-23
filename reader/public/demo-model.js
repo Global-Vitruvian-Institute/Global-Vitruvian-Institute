@@ -71,7 +71,7 @@ export function isDemoPaneId(id) {
 }
 
 export function demoPaneLabel(id) {
-  if (id === DEMO_PANE_ACCOUNT) return 'User info';
+  if (id === DEMO_PANE_ACCOUNT) return 'User';
   if (id === DEMO_PANE_ADMIN) return 'Admin';
   return null;
 }

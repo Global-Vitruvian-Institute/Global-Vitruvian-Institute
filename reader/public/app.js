@@ -19,7 +19,7 @@ import { fetchStatic as fetch } from './static-api.js';
 import { wikipediaArticle } from './wikipedia.js';
 import { designPaneLayout, designContextRequest, designContextHeading } from './design-context.js';
 import { loadRuntimeStore } from './store-config.js';
-import { createDemoUi } from './demo-ui.js';
+import { createAccountLoadingView, createDemoUi } from './demo-ui.js';
 import { createReadingTracker } from './demo-tracking.js';
 import { demoPaneLabel, isDemoPaneId } from './demo-model.js';
 import {
@@ -36,7 +36,7 @@ import { currentReadingMode, initReadingMode, setReadingMode } from './reading.j
 
 /** The page title for each region; the reader's own title is the note's. */
 const VIEW_TITLES = Object.freeze({
-  [VIEW_ACCOUNT]: 'User info',
+  [VIEW_ACCOUNT]: 'User',
   [VIEW_SETTINGS]: 'Settings',
   [VIEW_ADMIN]: 'Admin',
 });
@@ -76,6 +76,8 @@ const state = {
   view: VIEW_READER,
   /** The reading URL's fragment, so switching regions never drops it. */
   routeHash: '',
+  /** Optional account destination, kept separate from the note's fragment. */
+  accountSection: null,
   /** The reading row's horizontal position while an account view is showing. */
   stackScrollLeft: 0,
   ready: false,
@@ -182,8 +184,8 @@ function noteHref(id) {
  * reading URL however it was reached. Everything is relative to the current
  * page, which is what keeps the static build working under a project subpath.
  */
-function stackHref(ids, { view = VIEW_READER, hash = '' } = {}) {
-  return `./${buildRouteQuery({ ids: ids.filter(isValidPaneId), view, hash })}`;
+function stackHref(ids, { view = VIEW_READER, hash = '', section = null } = {}) {
+  return `./${buildRouteQuery({ ids: ids.filter(isValidPaneId), view, hash, section })}`;
 }
 
 /**
@@ -221,6 +223,7 @@ function routeFromUrl() {
     ids: nextIds,
     view: parsed.view,
     hash: safeDecode(parsed.hash),
+    section: parsed.section,
     needsReplace,
     // Only the reader has nothing to show for an empty vault; an account view
     // still explains itself.
@@ -233,12 +236,12 @@ function routeFromUrl() {
  * write (a SecurityError for a URL it reads as another origin, for instance);
  * the caller must then put its state back so the DOM and the URL still agree.
  */
-function writeRouteUrl(ids, { view = VIEW_READER, hash = '', replace = false } = {}) {
+function writeRouteUrl(ids, { view = VIEW_READER, hash = '', section = null, replace = false } = {}) {
   // Never write a URL that does not describe the whole route: a caller that
   // hands us a junk id gets a refusal (and restores its state) instead of a
   // silently shorter URL that disagrees with what is on screen.
   if (!ids.every(isValidPaneId)) return false;
-  const href = stackHref(ids, { view, hash });
+  const href = stackHref(ids, { view, hash, section });
   try {
     if (replace) window.history.replaceState(null, '', href);
     else window.history.pushState(null, '', href);
@@ -255,7 +258,7 @@ function reconcileRoute() {
     // Best effort: if the browser refuses even this same-origin replace, the
     // valid route is still what gets rendered, so nothing is built from a junk
     // id; the stale segment simply stays in the address bar.
-    writeRouteUrl(route.ids, { view: route.view, hash: route.hash, replace: true });
+    writeRouteUrl(route.ids, { view: route.view, hash: route.hash, section: route.section, replace: true });
   }
   applyRoute(route);
 }
@@ -430,6 +433,11 @@ function applyChrome(bootstrap) {
 
 /* ---------------------------------------------------------- page regions --- */
 
+// Pane offsets are restored by the reader. Native history restoration runs
+// after popstate and can otherwise re-anchor a preserved reading hash over the
+// actual offset just restored when returning from an account view.
+if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
+
 /**
  * Come back to the reading stack, or build it if it is not on screen yet.
  *
@@ -440,6 +448,7 @@ function applyChrome(bootstrap) {
  */
 function enterReaderView({ ids, hash = '', heading = null, focusElement = false, focusIndex = null, animate = false }) {
   const returning = state.view !== VIEW_READER;
+  state.accountSection = null;
   state.view = VIEW_READER;
   state.routeHash = hash;
   showRegion(VIEW_READER);
@@ -465,7 +474,9 @@ function enterReaderView({ ids, hash = '', heading = null, focusElement = false,
     if (heading) {
       const pane = state.panes[state.panes.length - 1];
       if (pane) scrollToHeading(pane, heading, scrollBehavior());
-    } else if (hash) {
+    } else if (hash && !returning) {
+      // Returning from User restores the actual reading position, not the
+      // older heading fragment that the reading URL still preserves.
       scrollLastPaneToHash(hash);
     }
     return;
@@ -476,7 +487,7 @@ function enterReaderView({ ids, hash = '', heading = null, focusElement = false,
 }
 
 /** Show an account region, leaving the reading stack's DOM untouched. */
-function enterAccountView({ ids, view, hash = '' }) {
+function enterAccountView({ ids, view, hash = '', section = null }) {
   if (state.view === VIEW_READER) {
     captureReaderPosition();
     // The row is about to be hidden, where every sheet reports a zero box.
@@ -490,6 +501,7 @@ function enterAccountView({ ids, view, hash = '' }) {
   state.view = view;
   state.stack = ids;
   state.routeHash = hash;
+  state.accountSection = view === VIEW_ACCOUNT && section === 'activity-history' ? section : null;
   dismissPreview();
   closeSearch();
   showRegion(view);
@@ -569,6 +581,8 @@ async function renderAccountView(view, { focus = false } = {}) {
   document.title = `${VIEW_TITLES[view] ?? 'Account'} · ${appTitle()}`;
 
   const scrollTop = els.account.scrollTop;
+  // The outline is available before configuration, auth or account reads.
+  els.accountContent.replaceChildren(createAccountLoadingView(view, { session: demo?.session }));
 
   // Choosing the store is asynchronous. Wait for it before showing the
   // "unavailable" region, so a slow config load is not reported as a failure.
@@ -583,29 +597,23 @@ async function renderAccountView(view, { focus = false } = {}) {
     return;
   }
 
-  // A quiet placeholder after a short delay: instant renders never flash it,
-  // slow ones say the page is still coming.
-  const loadingTimer = window.setTimeout(() => {
-    if (token !== accountRenderToken || state.view !== view) return;
-    if (els.accountContent.childElementCount) return;
-    const loading = document.createElement('p');
-    loading.className = 'account-loading';
-    loading.setAttribute('role', 'status');
-    loading.append(
-      Object.assign(document.createElement('span'), { className: 'account-loading-dot', ariaHidden: 'true' }),
-      document.createTextNode('Loading'),
-    );
-    els.accountContent.replaceChildren(loading);
-  }, 140);
-
   const committed = await demo.renderPane(els.accountContent, view, {
     isCurrent: () => token === accountRenderToken && state.view === view,
   });
-  window.clearTimeout(loadingTimer);
-  if (token !== accountRenderToken) return;
+  if (token !== accountRenderToken || state.view !== view) return;
   // A refresh after a pin or a review must not move the reader's place.
   els.account.scrollTop = scrollTop;
-  if (committed && focus) focusAccountHeading();
+  if (committed && focus) {
+    const historyHeading = state.accountSection === 'activity-history'
+      ? els.accountContent.querySelector('#activity-history h2')
+      : null;
+    if (historyHeading) {
+      historyHeading.focus({ preventScroll: true });
+      const top = els.accountContent.querySelector('#activity-history').getBoundingClientRect().top
+        - els.account.getBoundingClientRect().top + els.account.scrollTop - 20;
+      els.account.scrollTo({ top, behavior: 'auto' });
+    } else focusAccountHeading();
+  }
 }
 
 function focusAccountHeading() {
@@ -623,7 +631,7 @@ function demoUnavailable() {
   wrap.className = 'demo-failure';
   const heading = document.createElement('h1');
   heading.className = 'demo-title';
-  heading.textContent = 'User info is unavailable';
+  heading.textContent = 'Account unavailable';
   const lede = document.createElement('p');
   lede.className = 'demo-lede';
   lede.textContent = 'The local demo could not start in this browser. The notes themselves are unaffected.';
@@ -635,16 +643,17 @@ function demoUnavailable() {
  * Switch to a full-page account region. The reading query parameters and the
  * hash are preserved, so "Return to notes" only has to remove `view`.
  */
-function goToView(view) {
+function goToView(view, { section = null } = {}) {
   if (!isAccountView(view)) return;
-  if (state.view === view) {
+  const target = view === VIEW_ACCOUNT && section === 'activity-history' ? section : null;
+  if (state.view === view && state.accountSection === target) {
     // Already there: refreshing is not a navigation, so no history entry.
-    renderAccountView(view, { focus: false });
+    renderAccountView(view, { focus: Boolean(target) });
     return;
   }
   const hash = state.routeHash ?? '';
-  if (!writeRouteUrl(state.stack, { view, hash })) return;
-  enterAccountView({ ids: state.stack, view, hash });
+  if (!writeRouteUrl(state.stack, { view, hash, section: target })) return;
+  enterAccountView({ ids: state.stack, view, hash, section: target });
 }
 
 function goToReader() {
@@ -1283,7 +1292,7 @@ function navigateFromPane(index, id, heading) {
     : [...state.stack.slice(0, safeIndex + 1), id];
 
   // Selecting a note always leaves the account region and writes the reading
-  // URL, so Random and Search keep working from User info, Settings and Admin.
+  // URL, so Random and Search keep working from User, Settings and Admin.
   if (!writeRouteUrl(next, { view: VIEW_READER })) {
     // The browser refused the URL. Put the old stack back rather than showing
     // panes the address bar does not describe.
@@ -1386,7 +1395,7 @@ function onDocumentClick(event) {
   const viewLink = event.target.closest('[data-account-view]');
   if (viewLink) {
     event.preventDefault();
-    goToView(viewLink.dataset.accountView);
+    goToView(viewLink.dataset.accountView, { section: viewLink.dataset.accountSection });
     return;
   }
 
@@ -1794,7 +1803,7 @@ async function initDemo() {
   demo = createDemoUi({
     store: demoStore,
     announce,
-    openView: (view) => goToView(view),
+    openView: (view, options) => goToView(view, options),
     changeRandom: (enabled) => {
       try {
         localStorage.setItem(RANDOM_KEY, enabled ? 'on' : 'off');
@@ -1808,7 +1817,7 @@ async function initDemo() {
       const ids = currentReadingMode() === 'page' ? state.stack.slice(-1) : state.stack;
       if (!ids.length) return applied;
       // Keep the URL and the visible stack in step with the new layout.
-      writeRouteUrl(ids, { view: state.view, hash: state.routeHash ?? '', replace: true });
+      writeRouteUrl(ids, { view: state.view, hash: state.routeHash ?? '', section: state.accountSection, replace: true });
       state.stack = ids;
       if (state.view === VIEW_READER) renderStack({ animate: false });
       syncAccountNav(state.view);
@@ -1854,7 +1863,7 @@ async function initDemo() {
 }
 
 /**
- * The header's User info entry opens the full-page account region. It is a
+ * The header's account entry opens the full-page account region. It is a
  * region of the same page, not a pane, so it is reachable even when the notes
  * index failed to load.
  */

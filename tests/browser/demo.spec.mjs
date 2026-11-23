@@ -8,7 +8,7 @@
  * stand in for GitHub Pages), and drives it with Playwright. Each test gets a
  * fresh browser context, so every test starts with an empty IndexedDB.
  *
- * The account views (User info, Settings, Admin) are a full-page region beside
+ * The account views (User, Settings, Admin) are a full-page region beside
  * the reader, not panes in the stack, so they are addressed through
  * `#account` / `#account-content` rather than `lastPane()`.
  */
@@ -41,7 +41,7 @@ const TINY_PNG = Buffer.from(
   'base64',
 );
 
-const ACCOUNT_TITLES = { account: 'User info', settings: 'Settings', admin: 'Admin' };
+const ACCOUNT_TITLES = { account: 'User', settings: 'Settings', admin: 'Admin' };
 
 if (!playwright) {
   test('browser tests need Playwright', { skip: 'Playwright was not found; set PLAYWRIGHT_MODULE to playwright/index.mjs' }, () => {});
@@ -163,7 +163,8 @@ async function waitForAccountView(page, view = 'account') {
   await accountRegion(page).waitFor();
   await page.waitForFunction((expected) => {
     const heading = document.querySelector('#account-content h1');
-    return Boolean(heading) && heading.textContent.trim() === expected;
+    return Boolean(heading) && heading.textContent.trim() === expected
+      && !document.querySelector('#account-content .account-loading');
   }, ACCOUNT_TITLES[view] ?? view);
   return accountBody(page);
 }
@@ -200,6 +201,32 @@ async function signInFromAccount(page, email) {
   await completeSignIn(body, email);
   await body.locator('.demo-facts').waitFor();
   return body;
+}
+
+/** Count vessel paths, not the decorative legend's SVG paths. */
+async function assertCollection(page, count, { subject = null, format = null } = {}) {
+  const collection = accountBody(page).locator('.activity-collection');
+  await collection.locator(`.activity-collection-count[data-count="${count}"]`).waitFor();
+  await page.waitForFunction((expected) =>
+    document.querySelectorAll('#account-content .activity-collection-svg path').length === Math.min(expected, 160), count);
+  assert.equal(await collection.locator('.activity-collection-count').textContent(), `${count} ${count === 1 ? 'activity' : 'activities'}`);
+  if (subject) assert.equal(await collection.locator(`.activity-collection-legend-item[data-subject="${subject}"]`).getAttribute('data-count'), String(count));
+  if (format) assert.equal(await collection.locator(`.activity-collection-format[data-format="${format}"]`).textContent(), `${format[0].toUpperCase()}${format.slice(1)} ${count}`);
+  assert.doesNotMatch(await collection.textContent(), /%|score|goal|streak|ranking/i);
+  return collection;
+}
+
+async function assertUserSkeleton(page) {
+  const loading = accountBody(page).locator('.account-loading');
+  await loading.waitFor();
+  assert.equal(await loading.getAttribute('aria-busy'), 'true');
+  assert.equal(await loading.locator('h1').textContent(), 'User');
+  assert.deepEqual(await loading.locator('h2').allTextContents(), [
+    'Your collection', 'Activity history', 'Pinned portfolio', 'Your reading', 'Vitruvian scholarship',
+  ]);
+  assert.ok(await loading.locator('.account-loading-bar[aria-hidden="true"]').count() >= 8);
+  assert.equal(await accountBody(page).locator('.demo-row, .activity-collection-count, .demo-facts').count(), 0,
+    'no invented counts or stale private rows while loading');
 }
 
 async function openActivityDialog(page) {
@@ -266,7 +293,7 @@ async function submissionsFor(page, email) {
 
 /* ------------------------------------------------------------------ tests --- */
 
-test('User info is a full-page account region, not a pane in the stack', { skip: !playwright }, async () => {
+test('User is a full-page account region, not a pane in the stack', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage();
   try {
     await waitForNote(page);
@@ -285,7 +312,7 @@ test('User info is a full-page account region, not a pane in the stack', { skip:
     // The reading query parameters survive; `view` is the only addition.
     assert.equal(await currentView(page), 'account');
     assert.match(page.url(), /note=Base(%20|\+)Note/);
-    assert.equal((await body.locator('h1.demo-title').textContent()).trim(), 'User info');
+    assert.equal((await body.locator('h1.demo-title').textContent()).trim(), 'User');
     assert.match(await body.textContent(), /Insecure local-only demo/);
     assert.match(await body.textContent(), /no server, no real authentication and no email/);
 
@@ -406,7 +433,14 @@ test('logging an activity needs a reflection or a file, and lands as pending', {
     await dialog.waitFor({ state: 'detached' });
     assert.match(await page.locator('#status').textContent(), /Activity logged and saved as pending review/);
 
-    const body = await goToView(page, 'account');
+    const savedLink = page.locator('a.activity-log-link');
+    await savedLink.waitFor();
+    assert.equal(await savedLink.textContent(), 'View activity log');
+    await savedLink.click();
+    const body = await waitForAccountView(page);
+    await assertCollection(page, 1, { subject: 'physical', format: 'practice' });
+    assert.deepEqual(await body.locator('#activity-history .activity-tag').allTextContents(), ['Physical', 'Practice']);
+    await page.waitForFunction(() => document.activeElement === document.querySelector('#activity-history h2'));
     await body.locator('.demo-row').waitFor();
     assert.equal(await body.locator('.demo-row').count(), 1);
     assert.equal((await body.locator('.demo-status').first().textContent()).trim(), 'Pending');
@@ -439,6 +473,17 @@ test('a signed-out reader can save an activity locally, then merge it on sign-in
     await guest.getByRole('button', { name: 'Save on this device' }).click();
     await guest.waitFor({ state: 'detached' });
     await page.locator('.demo-guest-marker').waitFor();
+    const logLink = page.locator('a.activity-log-link');
+    await logLink.waitFor();
+    assert.equal(await logLink.textContent(), 'View activity log');
+    await logLink.click();
+    await waitForAccountView(page);
+    await assertCollection(page, 1, { subject: 'physical', format: 'practice' });
+    assert.deepEqual(await accountBody(page).locator('#activity-history .activity-tag').allTextContents(), ['Physical', 'Practice']);
+    assert.equal(await accountBody(page).locator('#activity-history .demo-status').textContent(), 'Saved on this device');
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Activity history');
+    assert.equal(await page.evaluate(() => Boolean(document.querySelector('#activity-history').compareDocumentPosition(document.querySelector('.demo-signin')) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
+    await page.locator('#account-back').click();
 
     await page.reload();
     await waitForNote(page, 'Movement');
@@ -449,7 +494,8 @@ test('a signed-out reader can save an activity locally, then merge it on sign-in
     assert.match(await body.textContent(), /Walked around the block\./);
 
     await completeSignIn(body, 'guest@example.com');
-    await body.locator('.demo-row').waitFor();
+    await body.locator('.demo-row .demo-status').filter({ hasText: /^Pending$/ }).waitFor();
+    await assertCollection(page, 1, { subject: 'physical', format: 'practice' });
     assert.equal((await body.locator('.demo-status').first().textContent()).trim(), 'Pending');
     assert.match(await body.textContent(), /Walked around the block\./);
     assert.equal(await page.evaluate(() => localStorage.getItem('vitruvian.guest-activities')), '[]');
@@ -697,7 +743,7 @@ test('storage that is missing or full never stops the notes, and never loses inp
     await missing.page.click('#login-link');
     const body = accountBody(missing.page);
     await body.locator('.demo-failure').waitFor();
-    assert.match(await body.textContent(), /User info is unavailable/);
+    assert.match(await body.textContent(), /Account unavailable/);
     assert.match(await body.textContent(), /The notes themselves are unaffected\./);
 
     // Settings does not depend on the store, so it still works here.
@@ -958,7 +1004,7 @@ test('an incomplete Supabase config explains itself in the account region and le
 
     await page.click('#login-link');
     await page.locator('#account-content h1').waitFor();
-    assert.equal((await page.locator('#account-content h1').textContent()).trim(), 'User info is unavailable');
+    assert.equal((await page.locator('#account-content h1').textContent()).trim(), 'Account unavailable');
     assert.match(await page.locator('#account-content').innerText(), /incomplete/i);
     assert.equal(await page.getByRole('button', { name: 'Try again' }).count(), 1);
     assert.equal(await page.getByRole('button', { name: 'Sign out' }).count(), 1);
@@ -1046,7 +1092,7 @@ test('only the exposed region is focusable, and a view change moves focus to its
     // Opening a view moves focus to its heading.
     await page.click('#login-link');
     await page.waitForFunction(() =>
-      document.activeElement?.tagName === 'H1' && document.activeElement.textContent.trim() === 'User info');
+      document.activeElement?.tagName === 'H1' && document.activeElement.textContent.trim() === 'User');
 
     // In the account region the reader's own controls are not focusable.
     assert.equal(await stack(page).isVisible(), false);
@@ -1131,7 +1177,13 @@ test('a slow account render cannot overwrite a newer view', { skip: !playwright 
   try {
     await waitForNote(page, 'Breath');
     const body = await signInFromAccount(page, 'race@example.com');
-    await body.locator('.demo-row, .demo-caption').first().waitFor();
+    await page.locator('#account-back').click();
+    await waitForNote(page, 'Breath');
+    const saved = await logActivity(page, { reflection: 'Private row must disappear during the next load.' });
+    await saved.waitFor({ state: 'detached' });
+    await goToView(page);
+    await body.locator('.demo-row').waitFor();
+    assert.match(await body.textContent(), /Private row must disappear/);
 
     // Hold the first submissions read of the account view open, so one render is
     // still in flight when a newer one has already committed.
@@ -1167,7 +1219,7 @@ test('a slow account render cannot overwrite a newer view', { skip: !playwright 
     await page.locator('#account [data-account-view="settings"]').click();
     await waitForAccountView(page, 'settings');
     await page.locator('#account [data-account-view="account"]').click();
-    await page.locator('#account-content .account-loading').waitFor();
+    await assertUserSkeleton(page);
     await page.waitForFunction(() => window.__delayedRead === true);
     await page.locator('#account [data-account-view="settings"]').click();
     await waitForAccountView(page, 'settings');
@@ -1196,11 +1248,15 @@ test('an admin review reaches the participant’s pinned portfolio and history',
     await dialog.getByRole('button', { name: 'Save as pending' }).click();
     await dialog.waitFor({ state: 'detached' });
 
-    let body = await goToView(page, 'account');
+    await page.locator('a.activity-log-link').click();
+    let body = await waitForAccountView(page);
+    await assertCollection(page, 1, { subject: 'financial', format: 'writing' });
+    assert.deepEqual(await body.locator('#activity-history .activity-tag').allTextContents(), ['Financial', 'Writing']);
     await body.locator('.demo-row').waitFor();
     await body.getByRole('button', { name: /^Pin the/ }).click();
     await body.locator('.demo-gallery-card').waitFor();
     assert.match(await body.locator('.demo-gallery-card .demo-status').textContent(), /Pending/);
+    await assertCollection(page, 1, { subject: 'financial', format: 'writing' });
 
     // The demo admin verifies it.
     await body.getByRole('button', { name: 'Sign out' }).click();
@@ -1227,6 +1283,14 @@ test('an admin review reaches the participant’s pinned portfolio and history',
     await body.locator('.demo-gallery-card').waitFor();
     assert.match(await body.locator('.demo-gallery-card .demo-status').textContent(), /Verified/);
     assert.equal((await body.locator('.demo-row .demo-status').first().textContent()).trim(), 'Verified');
+    await assertCollection(page, 1, { subject: 'financial', format: 'writing' });
+    assert.deepEqual(await body.locator('#activity-history .activity-tag').allTextContents(), ['Financial', 'Writing']);
+    await page.reload();
+    await waitForAccountView(page);
+    await assertCollection(page, 1, { subject: 'financial', format: 'writing' });
+    assert.equal(await body.locator('#activity-history .demo-row').count(), 1);
+    assert.equal(await body.locator('.demo-gallery-card').count(), 1);
+    assert.equal(await body.locator('#activity-history .demo-status').textContent(), 'Verified');
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -1451,6 +1515,251 @@ async function mountMockedInline(page, { session = null, rows = [], guests = [] 
   await page.evaluate(() => window.__mount());
 }
 
+for (const prefix of ['/', `${config.projectPath.replace(/\/$/, '')}/`]) {
+  test(`inline save links to history and returns the exact reading place under ${prefix}`, { skip: !playwright }, async () => {
+    const { context, page, errors } = await openPage({
+      reading: 'stacked', reducedMotion: 'reduce', viewport: { width: 900, height: 360 },
+      url: `${prefix}?note=Breath&stackedNotes=Orientation#what-brought-you-here`,
+    });
+    try {
+      await waitForNote(page, 'Orientation');
+      const block = await waitForInlineForm(page);
+      await block.locator('textarea').fill('Synthetic opening reflection.');
+      await block.getByRole('button', { name: 'Save response' }).click();
+      const link = block.locator('a.activity-log-link');
+      await link.waitFor();
+      assert.equal(await link.textContent(), 'View activity log');
+      assert.equal(await link.getAttribute('data-account-view'), 'account');
+      assert.equal(await link.getAttribute('data-account-section'), 'activity-history');
+      const readingUrl = page.url();
+      const destination = new URL(await link.getAttribute('href'), readingUrl);
+      const reading = new URL(readingUrl);
+      assert.equal(destination.pathname, reading.pathname);
+      assert.equal(destination.hash, reading.hash);
+      assert.equal(destination.searchParams.get('note'), 'Breath');
+      assert.deepEqual(destination.searchParams.getAll('stackedNotes'), ['Orientation']);
+      assert.equal(destination.searchParams.get('view'), 'account');
+      assert.equal(destination.searchParams.get('section'), 'activity-history');
+      // Clicking an offscreen link scrolls the sheet before navigation captures
+      // it, so measure the reading place with the actual link already in view.
+      await link.scrollIntoViewIfNeeded();
+      const sheet = lastPane(page).locator('.pane-sheet');
+      const scroll = await sheet.evaluate(async (node) => {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return node.scrollTop;
+      });
+      assert.ok(scroll > 0, 'fragment opens a scrolled reading position');
+      await link.click();
+      await waitForAccountView(page);
+      await assertCollection(page, 1, { subject: 'general', format: 'reflection' });
+      assert.deepEqual(await accountBody(page).locator('#activity-history .activity-tag').allTextContents(), ['General', 'Reflection']);
+      assert.match(await accountBody(page).locator('#activity-history').textContent(), /Synthetic opening reflection\./);
+      await page.waitForFunction(() => document.activeElement === document.querySelector('#activity-history h2'));
+      const heading = await accountBody(page).locator('#activity-history h2').boundingBox();
+      const region = await accountRegion(page).boundingBox();
+      assert.ok(heading.y >= region.y && heading.y < region.y + region.height, 'history is scrolled into view');
+      const logUrl = page.url();
+      await page.goBack();
+      await page.waitForURL(readingUrl);
+      await waitForNote(page, 'Orientation');
+      const backScroll = await sheet.evaluate(async (node) => {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return node.scrollTop;
+      });
+      await page.goForward();
+      await waitForAccountView(page);
+      assert.equal(page.url(), logUrl);
+      await page.locator('#account-back').click();
+      await page.waitForURL(readingUrl);
+      await waitForNote(page, 'Orientation');
+      const returnedScroll = await sheet.evaluate(async (node) => {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return node.scrollTop;
+      });
+      await page.goBack();
+      await waitForAccountView(page);
+      assert.equal(page.url(), logUrl);
+      await assertCollection(page, 1);
+      await page.reload();
+      await waitForAccountView(page);
+      assert.equal(page.url(), logUrl);
+      await assertCollection(page, 1);
+      // Ordinary href navigation in a new tab, not the app's click handler.
+      const direct = await context.newPage();
+      await direct.goto(destination.href);
+      await waitForAccountView(direct);
+      await assertCollection(direct, 1);
+      await direct.reload();
+      await waitForAccountView(direct);
+      await direct.locator('#account-back').click();
+      await direct.waitForURL(readingUrl);
+      await waitForNote(direct, 'Orientation');
+      assert.equal(await accountRegion(direct).isVisible(), false);
+      await direct.close();
+      assert.deepEqual(errors, []);
+      assert.deepEqual({ returnScroll: returnedScroll, backScroll }, { returnScroll: scroll, backScroll: scroll },
+        'Return and Back must preserve the reader scroll, not re-anchor the retained hash');
+    } finally { await context.close(); }
+  });
+}
+
+test('User outline paints while runtime config is pending and a stale load cannot replace Settings', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  try {
+    let requested = false;
+    await page.route('**/supabase-config.json', async (route) => {
+      requested = true;
+      await gate;
+      await route.fulfill({ json: { mode: 'local' } });
+    });
+    await page.goto('/?note=Orientation&view=account', { waitUntil: 'domcontentloaded' });
+    await assertUserSkeleton(page);
+    assert.equal(requested, true);
+    await page.locator('#account [data-account-view="settings"]').click();
+    release();
+    await waitForAccountView(page, 'settings');
+    await page.locator('#account-content #demo-appearance').waitFor();
+    assert.equal(await accountBody(page).locator('.demo-row, .activity-collection').count(), 0);
+    await page.locator('#account [data-account-view="account"]').click();
+    await waitForAccountView(page);
+    await assertCollection(page, 0);
+    assert.deepEqual(errors, []);
+  } finally { release(); await context.close(); }
+});
+
+test('User outline waits for database init but Settings does not', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({
+    url: '/?note=Orientation&view=account',
+    initScript: () => {
+      const open = IDBFactory.prototype.open;
+      IDBFactory.prototype.open = function (...args) {
+        const request = open.apply(this, args);
+        request.addEventListener('success', (event) => {
+          event.stopImmediatePropagation();
+          window.__releaseDatabase = () => request.onsuccess?.call(request, event);
+        }, { once: true });
+        return request;
+      };
+    },
+  });
+  try {
+    await assertUserSkeleton(page);
+    await page.waitForFunction(() => typeof window.__releaseDatabase === 'function');
+    await page.locator('#account [data-account-view="settings"]').click();
+    await waitForAccountView(page, 'settings');
+    await page.locator('#account-content #demo-appearance').selectOption('dark');
+    assert.equal(await page.locator('html').getAttribute('data-appearance'), 'dark');
+    await page.evaluate(() => window.__releaseDatabase());
+    await page.locator('#account [data-account-view="account"]').click();
+    await waitForAccountView(page);
+    await assertCollection(page, 0);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('public portfolio and scholarship are genuinely disabled for guests and signed-in readers', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  try {
+    const requests = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (!['127.0.0.1', 'localhost'].includes(url.hostname) || /public|share|scholar|portfolio|apply/i.test(url.pathname)) requests.push(request.url());
+    });
+    for (const signedIn of [false, true]) {
+      if (signedIn) await signInFromAccount(page, 'disabled-actions@example.com');
+      else await goToView(page);
+      const scholarship = accountBody(page).locator('[data-account-section="scholarship"]');
+      assert.equal(await scholarship.locator('h2').textContent(), 'Vitruvian scholarship');
+      assert.equal(await scholarship.getByRole('button', { name: 'Learn more' }).isDisabled(), true);
+      assert.equal(await scholarship.getByRole('button', { name: 'Learn more' }).getAttribute('aria-disabled'), 'true');
+      assert.match(await scholarship.textContent(), /Coming soon/);
+      assert.equal(await scholarship.locator('a, button:enabled, input, form').count(), 0);
+      // Native DOM activation of a disabled button must not run an action.
+      await scholarship.locator('button').evaluate((node) => node.click());
+      await goToView(page, 'settings');
+      const portfolio = accountBody(page).locator('[data-account-section="portfolio"]');
+      assert.match(await portfolio.textContent(), /Public portfolio.*Private.*Make public.*Coming soon/s);
+      assert.equal(await portfolio.getByRole('button', { name: 'Make public' }).isDisabled(), true);
+      assert.equal(await portfolio.getByRole('button', { name: 'Make public' }).getAttribute('aria-disabled'), 'true');
+      assert.equal(await portfolio.locator('a, button:enabled, input, form').count(), 0);
+      const url = page.url();
+      await portfolio.locator('button').evaluate((node) => node.click());
+      assert.equal(page.url(), url);
+      assert.equal(context.pages().length, 1);
+    }
+    assert.deepEqual(requests, [], 'no sharing, application or external network actions');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('mobile dark collection caps at 160 pebbles with exact accessible counts and no idle animation', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({
+    url: '/?note=Orientation&view=account', viewport: config.mobileViewport,
+    reducedMotion: 'reduce', colorScheme: 'dark',
+    initScript: () => {
+      localStorage.setItem('vitruvian.appearance', 'dark');
+      // Synthetic read fixture deliberately exceeds the normal guest write cap.
+      localStorage.setItem('vitruvian.guest-activities', JSON.stringify(Array.from({ length: 173 }, (_, index) => ({
+        id: `synthetic-${index}`, noteId: 'Movement', noteTitle: 'Synthetic movement',
+        reflection: `Test reflection ${index}`, at: '2026-01-01T12:00:00.000Z',
+      }))));
+      const request = window.requestAnimationFrame.bind(window);
+      window.__frameRequests = 0;
+      window.requestAnimationFrame = (callback) => { window.__frameRequests += 1; return request(callback); };
+    },
+  });
+  try {
+    await waitForAccountView(page);
+    const collection = await assertCollection(page, 173, { subject: 'physical', format: 'practice' });
+    assert.equal(await page.locator('html').getAttribute('data-appearance'), 'dark');
+    assert.equal(await collection.locator('.activity-collection-more').textContent(), '+13 more');
+    assert.equal(await collection.locator('.activity-collection-svg').getAttribute('aria-hidden'), 'true');
+    assert.equal(await collection.locator('.activity-collection-count').getAttribute('aria-hidden'), null);
+    assert.equal(await accountBody(page).locator('#activity-history .demo-row').count(), 173);
+    const text = await collection.ariaSnapshot();
+    assert.match(text, /173 activities/);
+    assert.match(text, /\+13 more/);
+    assert.match(text, /Physical/);
+    const bounds = await collection.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= config.mobileViewport.width);
+    assert.equal(await collection.evaluate((node) => node.scrollWidth <= node.clientWidth), true);
+    assert.equal(await accountRegion(page).evaluate((node) => node.scrollWidth <= node.clientWidth), true);
+    const geometry = () => collection.locator('.activity-collection-svg path').evaluateAll((nodes) => nodes.map((node) => [node.getAttribute('d'), node.getAttribute('transform')]));
+    const first = await geometry();
+    assert.equal(first.length, 160);
+    assert.ok(first.every(([path, transform]) => path.startsWith('M ') && /translate\(.+\) scale\(/.test(transform)));
+    // Let all reader layout work settle, then observe an idle window. Counting
+    // requested frames detects loops even if they keep writing the same geometry.
+    await page.waitForTimeout(150);
+    const frames = await page.evaluate(() => window.__frameRequests);
+    await page.waitForTimeout(250);
+    assert.equal(await page.evaluate(() => window.__frameRequests), frames);
+    assert.deepEqual(await geometry(), first);
+
+    // A remount may reuse the same visible prefix, but its overflow count must
+    // come from the current records, not the cached pile.
+    await page.evaluate(() => {
+      const key = 'vitruvian.guest-activities';
+      const entries = JSON.parse(localStorage.getItem(key));
+      entries.push({ ...entries[0], id: 'zz-overflow-174', reflection: 'One more synthetic activity.' });
+      localStorage.setItem(key, JSON.stringify(entries));
+    });
+    await goToView(page, 'settings');
+    await goToView(page);
+    await assertCollection(page, 174, { subject: 'physical', format: 'practice' });
+    assert.equal(await collection.locator('.activity-collection-more').textContent(), '+14 more');
+    assert.deepEqual(await geometry(), first, 'an offscreen addition does not rearrange the visible pile');
+
+    await page.reload();
+    await waitForAccountView(page);
+    await assertCollection(page, 173);
+    assert.deepEqual(await geometry(), first, 'reduced-motion settled geometry survives reload');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
 test('an embedded activity answers in place: validation, guest save, reload and upsert', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage({ url: '/?note=Orientation' });
   try {
@@ -1560,6 +1869,14 @@ test('an embedded activity keeps its text when storage is blocked, and still sav
     const stored = await missing.page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
     assert.equal(stored.length, 1);
     assert.equal(stored[0].reflection, 'Saved without a database.');
+    await block.locator('a.activity-log-link').click();
+    await waitForAccountView(missing.page);
+    await assertCollection(missing.page, 1, { subject: 'general', format: 'reflection' });
+    assert.match(await accountBody(missing.page).locator('#activity-history').textContent(), /Saved without a database\./);
+    assert.equal(await missing.page.evaluate(() => document.activeElement?.textContent), 'Activity history');
+    await missing.page.reload();
+    await waitForAccountView(missing.page);
+    await assertCollection(missing.page, 1);
     assert.deepEqual(missing.errors, []);
   } finally {
     await missing.context.close();
@@ -1604,13 +1921,24 @@ test('an embedded guest response merges into the account once, and resaving adds
     await body.locator('.demo-row').waitFor();
     assert.equal(await body.locator('.demo-row').count(), 1);
     assert.match(await body.textContent(), /What brought me here is a question about money\./);
+    await assertCollection(page, 1, { subject: 'general', format: 'reflection' });
+    assert.deepEqual(await body.locator('#activity-history .activity-tag').allTextContents(), ['General', 'Reflection']);
+    await body.getByRole('button', { name: /^Pin the/ }).click();
+    await body.locator('.demo-gallery-card').waitFor();
+    await assertCollection(page, 1, { subject: 'general', format: 'reflection' });
+    await page.reload();
+    await waitForAccountView(page);
+    await assertCollection(page, 1, { subject: 'general', format: 'reflection' });
+    assert.equal(await body.locator('#activity-history .demo-row').count(), 1);
+    assert.equal(await body.locator('.demo-gallery-card').count(), 1);
+    assert.equal((await submissionsFor(page, 'inline@example.com')).length, 1);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
   }
 });
 
-test('a signed-in embedded save reaches User info, states reviewer access, and clears on sign out', { skip: !playwright }, async () => {
+test('a signed-in embedded save reaches User, states reviewer access, and clears on sign out', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage({ url: '/?note=Orientation' });
   try {
     await waitForNote(page, 'Orientation');
@@ -1629,8 +1957,10 @@ test('a signed-in embedded save reaches User info, states reviewer access, and c
     await page.waitForFunction(() =>
       /Pending review/.test(document.querySelector('.inline-activity-status')?.textContent ?? ''));
 
-    // It is a real submission: User info shows it as pending review.
-    await goToView(page, 'account');
+    // The post-save link reaches the actual account history.
+    await block.locator('a.activity-log-link').click();
+    await waitForAccountView(page);
+    await assertCollection(page, 1, { subject: 'general', format: 'reflection' });
     await body.locator('.demo-row').waitFor();
     assert.equal(await body.locator('.demo-row').count(), 1);
     assert.match(await body.locator('.demo-status').first().textContent(), /Pending/);
