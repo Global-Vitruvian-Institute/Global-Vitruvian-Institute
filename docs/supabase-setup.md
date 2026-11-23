@@ -10,16 +10,40 @@ re-run the migration there.
 
 Open **SQL Editor → New query** and run the migrations **in order**:
 
-1. [`supabase/migrations/0001_initial.sql`](../supabase/migrations/0001_initial.sql)
-2. [`supabase/migrations/0002_reading_stats.sql`](../supabase/migrations/0002_reading_stats.sql)
-3. [`supabase/migrations/0003_review_hardening.sql`](../supabase/migrations/0003_review_hardening.sql)
+1. [`supabase/migrations/20261122000001_initial.sql`](../supabase/migrations/20261122000001_initial.sql)
+2. [`supabase/migrations/20261122000002_reading_stats.sql`](../supabase/migrations/20261122000002_reading_stats.sql)
+3. [`supabase/migrations/20261122000003_review_hardening.sql`](../supabase/migrations/20261122000003_review_hardening.sql)
 
 Migration 0001 creates profiles, invitations, submissions, evidence, reviews,
 reading statistics, row-level security, and the private `evidence` bucket
 policies. Migration 0002 adds `account_stats` and the two activity RPCs
 (`record_note_view`, `add_active_time`). Migration 0003 adds transactional
 reviews, review history, and the pin RPC, and closes direct edits to reviewed
-work. A project that already ran the original 0001 still needs 0002 and 0003.
+work. A project that already ran the earlier migrations manually must be baselined before enabling the GitHub integration; see [Automatic migrations](#automatic-migrations).
+
+## Automatic migrations
+
+The files use Supabase's timestamped names and `supabase/config.toml` is present, so
+the GitHub integration can apply future migrations on a push to `main`.
+
+Baseline the migrations already applied by hand **once**, in the SQL editor:
+
+```sql
+insert into supabase_migrations.schema_migrations (version, name) values
+  ('20261122000001', 'initial'),
+  ('20261122000002', 'reading_stats'),
+  ('20261122000003', 'review_hardening'),
+  ('20261122000004', 'repair_functions')
+on conflict (version) do nothing;
+```
+
+Then enable **Deploy to production** in the Supabase GitHub integration. Until that
+baseline exists, the integration would try to re-run `initial` against existing
+tables and fail. There is no staging database on the free plan; migrations go
+straight to production.
+
+New migrations must use `supabase migration new <name>` or a 14-digit timestamp
+prefix, and should be reviewed before merging to `main`.
 
 ## 2. Invite the first admin
 
