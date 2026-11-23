@@ -805,7 +805,7 @@ export function createDemoUi({
       fragment.append(el('p', 'demo-lede',
         'Sign in with an email address to log activities and keep a portfolio. '
         + (remote
-          ? 'This preview uses a one-time email code and no password.'
+          ? 'This preview uses a one-time email link and no password.'
           : 'This is a local demo: there is no password, and no email is sent.')));
       const built = buildSignInForm({
         idPrefix: 'demo-pane-signin',

@@ -225,8 +225,25 @@ export function createSupabaseClient({
   /** A usable session, refreshed when it is close to expiry. */
   async function getSession() {
     if (!session) return null;
-    if (!session.expires_at || session.expires_at - now() > 60_000) return session;
-    return refresh();
+    if (session.expires_at && session.expires_at - now() <= 60_000) {
+      await refresh();
+      if (!session) return null;
+    }
+    // A magic-link fragment carries tokens but not the user object. Hydrate it
+    // once so the account can load its profile.
+    if (!session.user) {
+      try {
+        const user = await request('/auth/v1/user', { token: session.access_token });
+        writeSession({ ...session, user });
+      } catch (error) {
+        if (error instanceof SupabaseError && error.status === 401) {
+          writeSession(null);
+          return null;
+        }
+        throw error;
+      }
+    }
+    return session;
   }
 
   async function signOut() {

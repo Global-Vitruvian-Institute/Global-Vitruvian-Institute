@@ -222,6 +222,35 @@ test('a bare 401 is treated as a service problem, not a dead session', async () 
   assert.notEqual(storage.getItem('vitruvian.supabase.session'), null);
 });
 
+test('a magic-link session hydrates its user before use', async () => {
+  const storage = memoryStorage();
+  const fetchImpl = fakeFetch({
+    '/auth/v1/user': { body: { id: 'user-from-link', email: 'a@example.com' } },
+  });
+  const client = createSupabaseClient({
+    url: 'https://example.supabase.co',
+    publishableKey: 'sb_publishable_test',
+    fetchImpl,
+    storage,
+    sessionKey: 'magic-link-session',
+  });
+  storage.setItem('magic-link-session', JSON.stringify({
+    access_token: 'from-link', refresh_token: 'r', expires_at: Date.now() + 3_600_000, user: null,
+  }));
+  const second = createSupabaseClient({
+    url: 'https://example.supabase.co',
+    publishableKey: 'sb_publishable_test',
+    fetchImpl,
+    storage,
+    sessionKey: 'magic-link-session',
+  });
+  const live = await second.getSession();
+  assert.equal(live.user.id, 'user-from-link');
+  assert.equal(fetchImpl.calls.at(-1).url, 'https://example.supabase.co/auth/v1/user');
+  assert.equal(fetchImpl.calls.at(-1).options.headers.authorization, 'Bearer from-link');
+  assert.equal(client.currentSession, null);
+});
+
 test('a magic-link fragment is captured once and removed from the address bar', () => {
   const storage = memoryStorage();
   const replaced = [];
