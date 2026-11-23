@@ -812,14 +812,16 @@ export function createDemoUi({
         onSignedIn: () => notifyChange(),
       });
       fragment.append(built.form);
-      fragment.append(el('p', 'demo-note', disclosureText()));
+      if (!remote) fragment.append(el('p', 'demo-note', disclosureText()));
       return fragment;
     }
 
     fragment.append(el('p', 'demo-lede', `Signed in as ${session.email}.`));
-    fragment.append(el('p', 'demo-caption', session.synthetic
-      ? 'Synthetic demo participant, seeded in this browser.'
-      : (remote ? 'Signed in with Supabase.' : 'Local account in this browser.')));
+    if (session.synthetic) {
+      fragment.append(el('p', 'demo-caption', 'Synthetic demo participant, seeded in this browser.'));
+    } else if (!remote) {
+      fragment.append(el('p', 'demo-caption', 'Local account in this browser.'));
+    }
 
     // The portfolio and history are the point of this view; the reading
     // statistics are a secondary footnote below them.
@@ -908,8 +910,6 @@ export function createDemoUi({
     }
     account.append(actions);
     fragment.append(account);
-
-    fragment.append(el('p', 'demo-note', disclosureText()));
     return fragment;
   }
 
@@ -996,7 +996,7 @@ export function createDemoUi({
       'Presets change colour only. The reader stays light either way: there is no dark mode and no automatic switch.'));
     fragment.append(appearance);
 
-    fragment.append(el('p', 'demo-note', disclosureText()));
+    if (!remote) fragment.append(el('p', 'demo-note', disclosureText()));
     return fragment;
   }
 
@@ -1031,7 +1031,7 @@ export function createDemoUi({
       fragment.append(el('p', 'demo-caption', remote
         ? 'Sign in with a reviewer or admin account to review submissions.'
         : `Sign in as ${DEMO_ADMIN_EMAIL} from User info to review submissions.`));
-      fragment.append(el('p', 'demo-note', disclosureText()));
+      if (!remote) fragment.append(el('p', 'demo-note', disclosureText()));
       return fragment;
     }
 
@@ -1081,7 +1081,7 @@ export function createDemoUi({
     }
     fragment.append(submissions);
 
-    fragment.append(el('p', 'demo-note', disclosureText()));
+    if (!remote) fragment.append(el('p', 'demo-note', disclosureText()));
     return fragment;
   }
 
@@ -1130,7 +1130,7 @@ export function createDemoUi({
     });
     actions.append(retry, signOut);
     wrap.append(actions);
-    wrap.append(el('p', 'demo-note', disclosureText()));
+    if (!remote) wrap.append(el('p', 'demo-note', disclosureText()));
     return wrap;
   }
 

@@ -1007,6 +1007,14 @@ input {
   font-family: var(--font-ui);
 }
 
+/* The account page reads as one sheet: section spacing carries the grouping,
+   and the rules only remain inside dialogs and admin tables. */
+.account-content .demo-section {
+  margin-top: 2em;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .note-content .demo-section-title {
   margin: 0 0 0.7em;
   color: var(--muted);

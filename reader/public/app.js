@@ -917,11 +917,16 @@ function renderBacklinks(footer, note) {
     title.className = 'backlink-title';
     title.textContent = backlink.title || friendlyName(backlink.id);
 
-    const id = document.createElement('span');
-    id.className = 'backlink-id';
-    id.textContent = backlink.id;
-
-    card.append(title, id);
+    // The path is only useful when it says something the title does not.
+    const label = backlink.title || friendlyName(backlink.id);
+    if (label.trim().toLowerCase() !== String(backlink.id).trim().toLowerCase()) {
+      const id = document.createElement('span');
+      id.className = 'backlink-id';
+      id.textContent = backlink.id;
+      card.append(title, id);
+    } else {
+      card.append(title);
+    }
     item.append(card);
     list.append(item);
   }
