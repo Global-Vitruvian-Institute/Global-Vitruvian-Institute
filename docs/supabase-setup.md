@@ -1,6 +1,6 @@
 # Supabase setup
 
-Project: `Vitruvian` (`https://qplbfsnhrsmudpnppoy.supabase.co`, `us-east-1`).
+Project: `Vitruvian` (`https://qplbfsnhrrsmudpnppoy.supabase.co`, `us-east-1`).
 
 One project is fine while there is no real participant data. Before real
 sign-ups, either reset this project or create a separate production project and
