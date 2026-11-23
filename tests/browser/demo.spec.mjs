@@ -334,7 +334,7 @@ test('Settings offers the appearance presets with no account at all', { skip: !p
     await select.waitFor();
     assert.deepEqual(
       await select.locator('option').allTextContents(),
-      ['Clear', 'Paper', 'Soft Lilac', 'Minimal', 'Things', 'Blue Topaz', 'Dark', 'Academy', 'Editorial'],
+      ['Clear', 'Paper', 'Soft Lilac', 'Minimal', 'Things', 'Blue Topaz', 'Dark (dark mode)', 'Academy (light)', 'Editorial (serif)'],
     );
     assert.equal(await select.inputValue(), 'clear');
     assert.equal(await select.evaluate((element) => element.tagName), 'SELECT');

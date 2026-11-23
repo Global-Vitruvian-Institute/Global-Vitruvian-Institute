@@ -58,17 +58,17 @@ export const APPEARANCES = Object.freeze([
   }),
   Object.freeze({
     id: 'dark',
-    label: 'Dark',
+    label: 'Dark (dark mode)',
     description: 'Charcoal surfaces, warm off-white text and soft blue links.',
   }),
   Object.freeze({
     id: 'khan',
-    label: 'Academy',
+    label: 'Academy (light)',
     description: 'Bright white and high-clarity blue, after Khan Academy reading colours.',
   }),
   Object.freeze({
     id: 'editorial',
-    label: 'Editorial',
+    label: 'Editorial (serif)',
     description: 'Cream paper, oxblood links and a serif reading face.',
   }),
 ]);
