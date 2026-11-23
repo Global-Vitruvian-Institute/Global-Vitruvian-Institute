@@ -362,7 +362,9 @@ export function createDemoUi({
     });
     const codeDisplay = el('p', 'demo-code');
     if (remote) {
-      codeDisplay.textContent = 'Check this address for a one-time code. No password is needed.';
+      codeDisplay.textContent = 'Check this address for a sign-in email. Open its link on this device; the reader signs in automatically. No password is needed.';
+      codeField.wrap.hidden = true;
+      signInButton.textContent = 'I opened the email link';
     } else {
       codeDisplay.append('Demo verification code, shown on screen because this demo sends no email: ');
       codeDisplay.append(el('code', 'demo-code-value', DEMO_VERIFICATION_CODE));
@@ -416,9 +418,30 @@ export function createDemoUi({
         return;
       }
 
-      const problem = remote
-        ? (/^\d{6,10}$/.test(codeField.control.value.trim()) ? null : 'Enter the code from the email.')
-        : validateVerificationCode(codeField.control.value);
+      if (remote) {
+        saving = true;
+        signInButton.disabled = true;
+        try {
+          const account = await store.readSession();
+          if (!account) {
+            codeField.wrap.hidden = false;
+            codeField.setError('Open the link from the email on this device, then try again.');
+            return;
+          }
+          setSession(account);
+          announce(`Signed in as ${account.email}.`);
+          onSignedIn?.(account);
+        } catch (error) {
+          codeField.wrap.hidden = false;
+          codeField.setError(error?.message ?? 'Sign-in could not be completed.');
+        } finally {
+          saving = false;
+          signInButton.disabled = false;
+        }
+        return;
+      }
+
+      const problem = validateVerificationCode(codeField.control.value);
       codeField.setError(problem);
       if (problem) return;
 

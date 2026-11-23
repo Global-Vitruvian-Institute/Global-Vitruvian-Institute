@@ -68,6 +68,34 @@ export function createSupabaseClient({
 
   let session = readSession();
 
+  /**
+   * Supabase's default magic-link email returns to this site with the session in
+   * the URL fragment. Capture it once, then remove it from the address bar.
+   */
+  function captureSessionFromUrl() {
+    try {
+      const location = globalThis.location;
+      if (!location?.hash) return null;
+      const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      if (!accessToken || !refreshToken) return null;
+      writeSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_at: now() + Number(params.get('expires_in') ?? 3600) * 1000,
+        user: null,
+      });
+      const clean = `${location.pathname}${location.search}`;
+      globalThis.history?.replaceState?.(null, '', clean);
+      return session;
+    } catch {
+      return null;
+    }
+  }
+
+  captureSessionFromUrl();
+
   function readSession() {
     try {
       const raw = storage?.getItem(sessionKey);

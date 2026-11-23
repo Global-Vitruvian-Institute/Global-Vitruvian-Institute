@@ -221,3 +221,30 @@ test('a bare 401 is treated as a service problem, not a dead session', async () 
   assert.notEqual(client.currentSession, null);
   assert.notEqual(storage.getItem('vitruvian.supabase.session'), null);
 });
+
+test('a magic-link fragment is captured once and removed from the address bar', () => {
+  const storage = memoryStorage();
+  const replaced = [];
+  const previous = globalThis.location;
+  globalThis.location = {
+    hash: '#access_token=from-link&refresh_token=refresh-link&expires_in=3600&token_type=bearer',
+    pathname: '/Global-Vitruvian-Institute/',
+    search: '',
+  };
+  globalThis.history = { replaceState: (...args) => replaced.push(args) };
+  try {
+    const client = createSupabaseClient({
+      url: 'https://example.supabase.co',
+      publishableKey: 'sb_publishable_test',
+      fetchImpl: fakeFetch({}),
+      storage,
+    });
+    assert.equal(client.currentSession.access_token, 'from-link');
+    assert.equal(client.currentSession.refresh_token, 'refresh-link');
+    assert.equal(replaced.length, 1);
+    assert.equal(replaced[0][2], '/Global-Vitruvian-Institute/');
+  } finally {
+    globalThis.location = previous;
+    delete globalThis.history;
+  }
+});
