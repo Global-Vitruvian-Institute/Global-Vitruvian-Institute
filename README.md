@@ -97,7 +97,7 @@ Active time and distinct pages are measured only for the signed-in reader, only 
 
 ## Production
 
-See [docs/production-plan.md](docs/production-plan.md) for the staging and production plan with Supabase. The participation features remain a browser-only mock until that work is done.
+See [docs/production-plan.md](docs/production-plan.md) for the environment plan and [docs/supabase-setup.md](docs/supabase-setup.md) for the live project steps. Schema and RLS are in `supabase/migrations/`; the participation features remain a browser-only mock until the store adapter is connected.
 
 ## Reader provenance
 
