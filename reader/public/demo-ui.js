@@ -33,6 +33,7 @@ import {
 } from './demo-model.js';
 import { APPEARANCES, appearanceLabel, currentAppearance, setAppearance } from './appearance.js';
 import { READING_MODES, currentReadingMode, readingModeLabel, setReadingMode } from './reading.js';
+import { addGuestEntry, guestEntryFor, readGuestEntries, removeGuestEntries } from './guest.js';
 
 const EVIDENCE_ACCEPT = [
   ...['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'],
@@ -450,6 +451,7 @@ export function createDemoUi({
         const { account, created } = await store.signIn(emailField.control.value, codeField.control.value);
         await store.writeSession(account.id);
         setSession(account);
+        await mergeGuestEntries();
         announce(created
           ? `Local demo account created for ${account.email}.`
           : `Signed in as ${account.email}.`);
@@ -465,7 +467,7 @@ export function createDemoUi({
     return { form, focus: () => emailField.control.focus() };
   }
 
-  function openSignInDialog({ onSignedIn, intro } = {}) {
+  function openSignInDialog({ onSignedIn, onGuest = null, intro } = {}) {
     const entry = createDialog({ title: 'Sign in to this browser', className: 'demo-dialog-signin' });
     if (intro) entry.body.append(el('p', 'demo-lede', intro));
     const built = buildSignInForm({
@@ -476,9 +478,130 @@ export function createDemoUi({
       },
     });
     entry.body.append(built.form);
+    if (onGuest) {
+      const guest = button('Save on this device', 'demo-button');
+      guest.addEventListener('click', () => {
+        entry.close();
+        onGuest();
+      });
+      entry.body.append(guest);
+    }
     entry.body.append(el('p', 'demo-note', disclosureText()));
     openDialog(entry, built.focus);
     return entry;
+  }
+
+  /** A reflection-only entry that belongs to this browser, not an account. */
+  function openGuestActivityDialog(note) {
+    const entry = createDialog({ title: `Log activity — ${note.title || note.id}`, className: 'demo-dialog-activity' });
+    entry.body.append(el('p', 'demo-lede',
+      'Saved on this device for now. Sign in whenever you want to keep it in your portfolio.'));
+
+    const form = el('form', 'demo-form');
+    form.noValidate = true;
+    const prefix = `demo-guest-activity-${dialogCounter}`;
+    const reflectionField = buildField({
+      id: `${prefix}-reflection`,
+      labelText: 'Reflection',
+      rows: 5,
+      hint: 'Required. Files need an account.',
+      maxLength: DEMO_LIMITS.maxReflectionLength,
+    });
+    const summary = el('p', 'demo-error demo-error-summary');
+    summary.hidden = true;
+    summary.setAttribute('role', 'alert');
+    const actions = el('div', 'demo-dialog-actions');
+    const cancel = button('Cancel', 'demo-button');
+    const save = el('button', 'demo-button demo-button-primary', 'Save on this device');
+    save.type = 'submit';
+    actions.append(cancel, save);
+    form.append(reflectionField.wrap, summary, actions);
+    entry.body.append(form);
+    cancel.addEventListener('click', () => entry.close());
+
+    let saving = false;
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (saving) return;
+      const reflection = reflectionField.control.value.trim();
+      if (!reflection) {
+        reflectionField.setError('Add a short reflection.');
+        return;
+      }
+      saving = true;
+      save.disabled = true;
+      const added = addGuestEntry({
+        noteId: note.id,
+        noteTitle: note.title || note.id,
+        reflection,
+      });
+      if (!added) {
+        summary.textContent = 'This browser would not store the entry.';
+        summary.hidden = false;
+        saving = false;
+        save.disabled = false;
+        return;
+      }
+      entry.close();
+      announce('Saved on this device. Log in to keep it in your portfolio.');
+      syncGuestMarker(note.id);
+    });
+
+    openDialog(entry, () => reflectionField.control.focus());
+    return entry;
+  }
+
+  /** Add or remove the small “saved on this device” line under an activity. */
+  function syncGuestMarker(noteId) {
+    const log = [...document.querySelectorAll('.demo-log-activity')]
+      .find((button) => button.dataset.noteId === noteId);
+    const article = log?.closest('.note-content');
+    if (!article) return;
+    const saved = !session && Boolean(guestEntryFor(noteId));
+    let marker = article.querySelector('.demo-guest-marker');
+    if (!saved) {
+      marker?.remove();
+      return;
+    }
+    if (!marker) {
+      marker = el('p', 'demo-caption demo-guest-marker', 'Saved on this device. Log in to keep it.');
+      log.after(marker);
+    }
+  }
+
+  /** Move anonymous browser entries into the signed-in account, once. */
+  let mergingGuests = false;
+  async function mergeGuestEntries() {
+    if (!session || mergingGuests) return { merged: 0, kept: 0 };
+    const entries = readGuestEntries();
+    if (!entries.length) return { merged: 0, kept: 0 };
+    mergingGuests = true;
+    const merged = [];
+    let kept = 0;
+    try {
+      for (const entry of entries) {
+        try {
+          await store.createSubmission({
+            accountId: session.id,
+            noteId: entry.noteId,
+            noteTitle: entry.noteTitle,
+            reflection: entry.reflection,
+            evidence: [],
+          });
+          merged.push(entry.id);
+        } catch {
+          kept += 1;
+        }
+      }
+      removeGuestEntries(merged);
+    } finally {
+      mergingGuests = false;
+    }
+    if (merged.length) {
+      notifyChange();
+      announce(`${merged.length} saved ${merged.length === 1 ? 'activity' : 'activities'} added to your account.`);
+    }
+    return { merged: merged.length, kept };
   }
 
   /* ---------------------------------------------------------- log activity --- */
@@ -493,10 +616,13 @@ export function createDemoUi({
     if (!session) {
       openSignInDialog({
         intro: remote
-          ? 'Sign in first. The activity is logged straight after, and visible to reviewers.'
-          : 'Sign in first. The activity is logged straight after, and stays in this browser.',
+          ? 'Sign in to keep this activity in your portfolio. Or save it on this device for now.'
+          : 'Sign in to keep this activity. Or save it on this device for now.',
         onSignedIn: () => {
           openActivityDialog(note);
+        },
+        onGuest: () => {
+          openGuestActivityDialog(note);
         },
       });
       return;
@@ -812,6 +938,23 @@ export function createDemoUi({
         onSignedIn: () => notifyChange(),
       });
       fragment.append(built.form);
+
+      const saved = readGuestEntries();
+      if (saved.length) {
+        const local = section('Saved on this device');
+        const list = el('ul', 'demo-list');
+        for (const entry of saved.slice().reverse()) {
+          const item = el('li', 'demo-row');
+          item.append(el('h3', 'demo-row-title', entry.noteTitle));
+          item.append(el('p', 'demo-row-meta', `${formatTimestamp(entry.at)} · Waiting for an account`));
+          if (entry.reflection) item.append(el('p', 'demo-reflection', entry.reflection));
+          list.append(item);
+        }
+        local.append(list);
+        local.append(el('p', 'demo-caption', 'Log in above to keep these in your portfolio.'));
+        fragment.append(local);
+      }
+
       if (!remote) fragment.append(el('p', 'demo-note', disclosureText()));
       return fragment;
     }
@@ -1224,11 +1367,13 @@ export function createDemoUi({
     if (article.querySelector('.demo-log-activity')) return;
     const wrap = el('div', 'demo-activity-actions');
     const log = button('Log activity', 'demo-button demo-button-primary demo-log-activity');
+    log.dataset.noteId = note.id;
     log.addEventListener('click', () => {
       openActivityDialog(note);
     });
     wrap.append(log);
     article.append(wrap);
+    syncGuestMarker(note.id);
   }
 
   function releasePane(host) {

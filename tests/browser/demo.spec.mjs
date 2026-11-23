@@ -396,6 +396,41 @@ test('logging an activity needs a reflection or a file, and lands as pending', {
   }
 });
 
+test('a signed-out reader can save an activity locally, then merge it on sign-in', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Movement' });
+  try {
+    await waitForNote(page, 'Movement');
+    await page.locator('button.demo-log-activity').click();
+    const signIn = page.locator('dialog.demo-dialog-signin');
+    await signIn.waitFor();
+    await signIn.getByRole('button', { name: 'Save on this device' }).click();
+
+    const guest = page.locator('dialog.demo-dialog-activity');
+    await guest.waitFor();
+    await guest.locator('textarea').fill('Walked around the block.');
+    await guest.getByRole('button', { name: 'Save on this device' }).click();
+    await guest.waitFor({ state: 'detached' });
+    await page.locator('.demo-guest-marker').waitFor();
+
+    await page.reload();
+    await waitForNote(page, 'Movement');
+    assert.equal(await page.locator('.demo-guest-marker').count(), 1);
+
+    const body = await goToView(page, 'account');
+    await body.getByText('Saved on this device', { exact: true }).waitFor();
+    assert.match(await body.textContent(), /Walked around the block\./);
+
+    await completeSignIn(body, 'guest@example.com');
+    await body.locator('.demo-row').waitFor();
+    assert.equal((await body.locator('.demo-status').first().textContent()).trim(), 'Pending');
+    assert.match(await body.textContent(), /Walked around the block\./);
+    assert.equal(await page.evaluate(() => localStorage.getItem('vitruvian.guest-activities')), '[]');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test('evidence: images preview, other files download, uploaded markup never runs', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage({ url: '/?note=Movement' });
   try {

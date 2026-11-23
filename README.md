@@ -18,7 +18,7 @@ breadcrumbs** turns the row off; it is on by default.
 
 **Settings → Appearance** chooses a stylesheet template. The Clear, Paper, and Soft Lilac templates are local. Minimal, Things, and Blue Topaz only adapt colour tokens from MIT-licensed Obsidian themes; sources are cited in `reader/public/themes/`. No theme layout or component CSS is copied.
 
-Participation runs on Supabase in production: public reading, open email sign-up, a private portfolio, evidence storage, reviewer verification, and reading statistics. The Markdown guide remains the primary content and is still being authored. A browser-only demo remains available by setting the runtime mode to `local`; see [Local participation demo](#local-participation-demo).
+Participation runs on Supabase in production: public reading, open email sign-up, a private portfolio, evidence storage, reviewer verification, and reading statistics. A signed-out reader can still log an activity without an account: the reflection stays in this browser and moves into the portfolio on the next sign-in. Files need an account. The Markdown guide remains the primary content and is still being authored. A browser-only demo remains available by setting the runtime mode to `local`; see [Local participation demo](#local-participation-demo).
 
 ## Status
 
