@@ -417,8 +417,8 @@ function syncRandom() {
 
 function applyChrome(bootstrap) {
   els.title.textContent = appTitle();
-  els.title.title = 'About these notes';
-  els.title.setAttribute('aria-label', `${appTitle()} — about these notes`);
+  els.title.title = 'Home';
+  els.title.setAttribute('aria-label', `${appTitle()} — home`);
   document.title = appTitle();
 
   syncRandom();
@@ -1877,11 +1877,6 @@ els.title.addEventListener('click', (event) => {
     return;
   }
   event.preventDefault();
-  const aboutId = state.bootstrap?.aboutNoteId;
-  if (state.ready && aboutId) {
-    navigateFromPane(state.stack.length - 1, aboutId, null);
-    return;
-  }
   goHome();
 });
 

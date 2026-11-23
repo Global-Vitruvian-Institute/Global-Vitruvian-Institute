@@ -243,6 +243,27 @@ async function statsFor(page, email) {
   return stats.find((record) => record.accountId === account.id) ?? { pages: {}, activeMs: 0 };
 }
 
+/** Every stored submission for one local account, read straight from IndexedDB. */
+async function submissionsFor(page, email) {
+  const { accounts } = await readDemoData(page);
+  const account = accounts.find((record) => record.email === email);
+  assert.ok(account, `the local account ${email} must exist`);
+  return page.evaluate(async (accountId) => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('vitruvian-demo');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const rows = await new Promise((resolve, reject) => {
+      const request = db.transaction('submissions', 'readonly').objectStore('submissions').getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return rows.filter((row) => row.accountId === accountId);
+  }, account.id);
+}
+
 /* ------------------------------------------------------------------ tests --- */
 
 test('User info is a full-page account region, not a pane in the stack', { skip: !playwright }, async () => {
@@ -535,9 +556,9 @@ test('the admin page reviews seeded participants and keeps a history', { skip: !
 });
 
 test('a pinned portfolio and its history survive a reload, and accounts stay separate', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage({ url: '/?note=Reflection' });
+  const { context, page, errors } = await openPage({ url: '/?note=Money check-in' });
   try {
-    await waitForNote(page, 'Reflection');
+    await waitForNote(page, 'Money check-in');
     await page.locator('button.demo-log-activity').click();
     await page.locator('dialog.demo-dialog-signin').waitFor();
     await completeSignIn(page.locator('dialog.demo-dialog-signin'), 'owner@example.com');
@@ -582,9 +603,9 @@ test('a pinned portfolio and its history survive a reload, and accounts stay sep
 });
 
 test('clearing local data asks for confirmation and restores the fixtures', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage({ url: '/?note=Reflection' });
+  const { context, page, errors } = await openPage({ url: '/?note=Money check-in' });
   try {
-    await waitForNote(page, 'Reflection');
+    await waitForNote(page, 'Money check-in');
     await page.locator('button.demo-log-activity').click();
     await page.locator('dialog.demo-dialog-signin').waitFor();
     await completeSignIn(page.locator('dialog.demo-dialog-signin'), 'temp@example.com');
@@ -621,9 +642,9 @@ test('clearing local data asks for confirmation and restores the fixtures', { sk
 });
 
 test('dialogs take focus, keep it, dismiss on Escape, and block reader shortcuts', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage({ url: '/?note=Reflection' });
+  const { context, page, errors } = await openPage({ url: '/?note=Money check-in' });
   try {
-    await waitForNote(page, 'Reflection');
+    await waitForNote(page, 'Money check-in');
     await page.locator('button.demo-log-activity').click();
     await page.locator('dialog.demo-dialog-signin').waitFor();
     await completeSignIn(page.locator('dialog.demo-dialog-signin'), 'keys@example.com');
@@ -995,13 +1016,13 @@ test('Random and Search leave the account region and open notes', { skip: !playw
 
     // Search works from an account view too.
     await goToView(page, 'account');
-    await page.locator('#search-input').fill('Reflection');
-    await page.locator('.search-result').first().click();
+    await page.locator('#search-input').fill('Money check-in');
+    await page.locator('.search-result').filter({ hasText: 'Money check-in' }).first().click();
     await page.waitForFunction(() => !document.querySelector('#stack').hidden);
     await page.waitForFunction(() => !new URL(location.href).searchParams.has('view'));
     await page.waitForFunction(() =>
-      document.querySelector('.stack > .pane:last-child')?.dataset.noteId === 'Reflection');
-    await waitForNote(page, 'Reflection');
+      document.querySelector('.stack > .pane:last-child')?.dataset.noteId === 'Money check-in');
+    await waitForNote(page, 'Money check-in');
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -1061,31 +1082,30 @@ test('appearance presets apply immediately, survive reload and stay light under 
     const select = body.locator('#demo-appearance');
     await select.waitFor();
 
+    // A theme is a separate stylesheet, so the attribute can be set before the
+    // file has loaded. Wait for the colour it produces, not the attribute.
+    const waitForBackground = (expected) => page.waitForFunction(
+      (value) => getComputedStyle(document.body).backgroundColor === value, expected);
+
     // A preset applies immediately, to the whole page.
     await select.selectOption('paper');
-    await page.waitForFunction(() => document.documentElement.dataset.appearance === 'paper');
+    await waitForBackground('rgb(246, 241, 232)');
     const paperBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    assert.equal(paperBg, 'rgb(246, 241, 232)');
     assert.notEqual(paperBg, clearBg);
     assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'light');
 
     // The choice survives a reload, and the reader stays light.
     await page.reload();
     await page.waitForFunction(() => document.documentElement.dataset.appearance === 'paper');
-    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), paperBg);
+    await waitForBackground(paperBg);
 
     await goToView(page, 'settings');
     await page.locator('#demo-appearance').selectOption('lilac');
-    await page.waitForFunction(() => document.documentElement.dataset.appearance === 'lilac');
-    assert.equal(
-      await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
-      'rgb(246, 245, 250)',
-    );
+    await waitForBackground('rgb(246, 245, 250)');
 
     // Back to the default.
     await page.locator('#demo-appearance').selectOption('clear');
-    await page.waitForFunction(() => document.documentElement.dataset.appearance === 'clear');
-    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), clearBg);
+    await waitForBackground(clearBg);
 
     // Every preset keeps the layout identical: only colour tokens change.
     const widths = [];
@@ -1163,9 +1183,9 @@ test('a slow account render cannot overwrite a newer view', { skip: !playwright 
 });
 
 test('an admin review reaches the participant’s pinned portfolio and history', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage({ url: '/?note=Reflection' });
+  const { context, page, errors } = await openPage({ url: '/?note=Money check-in' });
   try {
-    await waitForNote(page, 'Reflection');
+    await waitForNote(page, 'Money check-in');
     // The participant logs and pins a submission.
     await page.locator('button.demo-log-activity').click();
     await page.locator('dialog.demo-dialog-signin').waitFor();
@@ -1286,10 +1306,753 @@ test('the activity control never appears in a preview or in the Markdown', { ski
     assert.equal(await page.locator('#preview button.demo-log-activity').count(), 0);
     assert.equal(await page.locator('#preview').getAttribute('aria-hidden'), 'true');
 
-    // And the published source of the note has no trace of it.
+    // An embedded activity previews its static prompt, never a field or a form.
+    await lastPane(page).locator('a[data-note-id="Orientation"]').first().hover();
+    await page.waitForFunction(() =>
+      /what led you to open this guide/.test(document.querySelector('#preview-content')?.textContent ?? ''));
+    assert.equal(await page.locator('#preview .inline-activity').count(), 1);
+    assert.match(await page.locator('#preview .inline-activity-prompt').textContent(), /what led you to open this guide/);
+    assert.equal(await page.locator('#preview .inline-activity-form').count(), 0);
+    assert.equal(await page.locator('#preview textarea, #preview .inline-activity-save, #preview .inline-activity-login').count(), 0);
+
+    // And the published source of the notes has no trace of either control.
     const notes = JSON.parse(await readFile(join(repoRoot, 'dist', 'notes.json'), 'utf8'));
     assert.doesNotMatch(notes.notes.Breath.html, /log-activity|Log activity/);
     assert.equal(notes.notes.Breath.activity, true);
+    assert.match(notes.notes.Orientation.html, /class="inline-activity"/);
+    assert.doesNotMatch(notes.notes.Orientation.html, /<form|<textarea|<button|log-activity/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+/* ------------------------------------------------------ inline activities --- */
+
+/** The one inline activity the vault currently embeds, in the newest pane. */
+const inlineActivity = (page) => lastPane(page).locator('.inline-activity');
+
+/** Wait for the reader to hydrate the embedded activity's form. */
+async function waitForInlineForm(page) {
+  const block = inlineActivity(page);
+  await block.locator('.inline-activity-form').waitFor();
+  return block;
+}
+
+/* ------------------------------------------- mocked-store session races --- */
+
+/**
+ * Mount an isolated copy of the demo UI over a deterministic fake store.
+ *
+ * The session/merge races below are hard to time through the real reader and a
+ * real database, so the harness appends its own `article` with a single
+ * embedded activity to the home page and leaves the real app untouched. Every
+ * store call that needs to be held open is exposed as a gate on
+ * `window.__mock.gates`, so a test can block it and release it without sleeping.
+ * `window.__mount()` rebuilds the UI over the same `window.__mock` state, which
+ * simulates a reload: the stored rows and the claimed localStorage entries
+ * persist while the UI does not.
+ *
+ * These are mocked-store tests. The local demo workflows around them keep
+ * exercising the real IndexedDB store and never use this harness.
+ */
+async function mountMockedInline(page, { session = null, rows = [], guests = [] } = {}) {
+  await page.evaluate(async ({ session, rows }) => {
+    const { createDemoUi } = await import(new URL('./demo-ui.js', location.href).href);
+
+    const deferred = () => {
+      let resolve;
+      let reject;
+      const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+      return { promise, resolve, reject };
+    };
+
+    const state = {
+      session,
+      rows: rows.map((row) => ({ evidence: [], ...row })),
+      creates: [],
+      listCalls: 0,
+      readSessionCalls: 0,
+      changeCount: 0,
+      gates: {},
+    };
+    window.__mock = state;
+    window.__setGate = (name) => { state.gates[name] = deferred(); };
+    window.__releaseGate = (name, value) => {
+      const gate = state.gates[name];
+      delete state.gates[name];
+      gate.resolve(value);
+    };
+
+    window.__mount = () => {
+      document.querySelector('[data-test-inline]')?.remove();
+      const article = document.createElement('article');
+      article.className = 'note-content';
+      article.dataset.testInline = '';
+      article.innerHTML = '<section class="inline-activity" '
+        + 'data-activity-title="What brought you here?" data-activity-id="what-brought-you-here">'
+        + '<h2 class="inline-activity-title" id="what-brought-you-here">What brought you here?</h2>'
+        + '<div class="inline-activity-prompt">Why did you open this guide?</div></section>';
+      document.body.append(article);
+
+      const store = {
+        remote: false,
+        disclosure: 'Deterministic test store.',
+        async open() {},
+        async seedIfNeeded() { return { seeded: false }; },
+        async readSession() {
+          state.readSessionCalls += 1;
+          return state.gates.readSession ? state.gates.readSession.promise : state.session;
+        },
+        async writeSession(accountId) { state.session = accountId ? state.session : null; },
+        async listSubmissions({ accountId } = {}) {
+          state.listCalls += 1;
+          if (state.gates.listSubmissions) return state.gates.listSubmissions.promise;
+          return state.rows.filter((row) => !accountId || row.accountId === accountId);
+        },
+        async createSubmission(input) {
+          state.creates.push({ ...input });
+          if (state.gates.createSubmission) await state.gates.createSubmission.promise;
+          const submission = {
+            id: `mock-submission-${state.rows.length + 1}`,
+            status: 'pending',
+            pinned: false,
+            createdAt: '2026-11-22T10:00:00.000Z',
+            evidence: [],
+            ...input,
+          };
+          state.rows.push(submission);
+          return { submission, evidence: [] };
+        },
+        async listEvidence() { return []; },
+        async listReviewEvents() { return []; },
+        async getStats(accountId) { return { accountId, pages: {}, activeMs: 0 }; },
+        async listAccounts() { return []; },
+        async listStats() { return []; },
+        async resetAll() { state.rows = []; },
+        async signIn(email) { return { account: { id: `account-${email}`, email }, created: true }; },
+        async sendCode() { return { sent: false }; },
+        async reviewSubmission() {},
+        async setPin() {},
+      };
+
+      const ui = createDemoUi({ store });
+      ui.onChange(() => { state.changeCount += 1; });
+      ui.decorateArticle(article, { id: 'Orientation', title: 'Orientation' });
+      window.__ui = ui;
+      window.__article = article;
+      return true;
+    };
+  }, { session, rows });
+
+  await page.evaluate((entries) => {
+    localStorage.setItem('vitruvian.guest-activities', JSON.stringify(entries));
+  }, guests);
+  await page.evaluate(() => window.__mount());
+}
+
+test('an embedded activity answers in place: validation, guest save, reload and upsert', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Orientation' });
+  try {
+    await waitForNote(page, 'Orientation');
+    const block = await waitForInlineForm(page);
+
+    // One section, with the static prompt, and none of the legacy dialog flow.
+    assert.equal(await page.locator('.stack > .pane .inline-activity').count(), 1);
+    assert.equal(await page.locator('button.demo-log-activity').count(), 0, 'no legacy log control');
+    assert.equal(await page.locator('dialog.demo-dialog-activity').count(), 0, 'no dialog');
+    assert.equal((await block.locator('h2.inline-activity-title').textContent()).trim(), 'What brought you here?');
+    assert.equal(await block.locator('h2.inline-activity-title').getAttribute('id'), 'what-brought-you-here');
+    assert.match(await block.locator('.inline-activity-prompt').textContent(), /what led you to open this guide/);
+    assert.equal((await block.locator('label').textContent()).trim(), 'Your response');
+    assert.equal(await block.locator('.inline-activity-login').isVisible(), false, 'no log-in nudge before a response exists');
+
+    // Empty: refused next to the field, with the field marked invalid.
+    await block.getByRole('button', { name: 'Save response' }).click();
+    await block.locator('.demo-error:visible').waitFor();
+    assert.match(await block.locator('.demo-error:visible').textContent(), /Add a short reflection/);
+    assert.equal(await block.locator('textarea').getAttribute('aria-invalid'), 'true');
+
+    // A guest answer is stored in this browser, in place.
+    await block.locator('textarea').fill('  I want to understand my money better.  ');
+    await block.getByRole('button', { name: 'Save response' }).click();
+    await block.locator('.inline-activity-status').filter({ hasText: 'Saved on this device' }).waitFor();
+    assert.equal(await block.locator('.inline-activity-login').isVisible(), true);
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].reflection, 'I want to understand my money better.');
+    assert.equal(stored[0].noteId, 'Orientation#what-brought-you-here');
+    assert.equal(stored[0].noteTitle, 'What brought you here?');
+    const firstId = stored[0].id;
+
+    // Reload: the saved answer comes back, still exactly one entry.
+    await page.reload();
+    await waitForNote(page, 'Orientation');
+    const reloaded = await waitForInlineForm(page);
+    assert.equal(await reloaded.locator('textarea').inputValue(), 'I want to understand my money better.');
+    assert.equal((await reloaded.locator('.inline-activity-status').textContent()).trim(), 'Saved on this device.');
+    assert.equal((await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')))).length, 1);
+
+    // Editing and saving again updates that entry instead of appending one.
+    await reloaded.locator('textarea').fill('');
+    assert.equal(await reloaded.locator('textarea').inputValue(), '', 'editing must not restore the old response');
+    assert.equal((await reloaded.locator('.inline-activity-status').textContent()).trim(), 'Unsaved changes.');
+    await reloaded.locator('textarea').fill('A different answer.');
+    assert.equal((await reloaded.locator('.inline-activity-status').textContent()).trim(), 'Unsaved changes.');
+    await reloaded.getByRole('button', { name: 'Save response' }).click();
+    await page.waitForFunction(() => {
+      const entries = JSON.parse(localStorage.getItem('vitruvian.guest-activities') ?? '[]');
+      return entries.length === 1 && entries[0].reflection === 'A different answer.';
+    });
+    const updated = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(updated.length, 1, 'an edit must not duplicate the entry');
+    assert.equal(updated[0].id, firstId, 'an edit keeps the stored id');
+    assert.equal(await page.locator('.stack > .pane .inline-activity-form').count(), 1, 'one form, not two');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('an embedded activity keeps its text when storage is blocked, and still saves without IndexedDB', { skip: !playwright }, async () => {
+  // 1. localStorage refuses the guest key: the reader says so and keeps the text.
+  const blocked = await openPage({
+    url: '/?note=Orientation',
+    initScript: () => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function patchedSetItem(key, value) {
+        if (key === 'vitruvian.guest-activities') throw new DOMException('blocked', 'QuotaExceededError');
+        return original.call(this, key, value);
+      };
+    },
+  });
+  try {
+    await waitForNote(blocked.page, 'Orientation');
+    const block = await waitForInlineForm(blocked.page);
+    await block.locator('textarea').fill('Keep this text.');
+    await block.getByRole('button', { name: 'Save response' }).click();
+    await block.locator('.demo-error:visible').waitFor();
+    assert.match(await block.locator('.demo-error:visible').textContent(), /would not store the response/);
+    assert.equal(await block.locator('textarea').inputValue(), 'Keep this text.', 'refused storage must not lose the input');
+    assert.equal(await blocked.page.evaluate(() => localStorage.getItem('vitruvian.guest-activities')), null);
+    // The notes are unaffected.
+    await blocked.page.click('#app-title');
+    await waitForNote(blocked.page);
+    assert.deepEqual(blocked.errors, []);
+  } finally {
+    await blocked.context.close();
+  }
+
+  // 2. No IndexedDB at all: the account store is unavailable, but a local
+  //    response needs only localStorage and still works.
+  const missing = await openPage({
+    url: '/?note=Orientation',
+    initScript: () => {
+      Object.defineProperty(window, 'indexedDB', { value: undefined, configurable: true });
+    },
+  });
+  try {
+    await waitForNote(missing.page, 'Orientation');
+    const block = await waitForInlineForm(missing.page);
+    await block.locator('textarea').fill('Saved without a database.');
+    await block.getByRole('button', { name: 'Save response' }).click();
+    await block.locator('.inline-activity-status').filter({ hasText: 'Saved on this device' }).waitFor();
+    const stored = await missing.page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].reflection, 'Saved without a database.');
+    assert.deepEqual(missing.errors, []);
+  } finally {
+    await missing.context.close();
+  }
+});
+
+test('an embedded guest response merges into the account once, and resaving adds nothing', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Orientation' });
+  try {
+    await waitForNote(page, 'Orientation');
+    const block = await waitForInlineForm(page);
+    await block.locator('textarea').fill('What brought me here is a question about money.');
+    await block.getByRole('button', { name: 'Save response' }).click();
+    await block.locator('.inline-activity-status').filter({ hasText: 'Saved on this device' }).waitFor();
+
+    // The inline control offers the sign-in that keeps it in a portfolio.
+    await block.locator('.inline-activity-login').click();
+    const dialog = page.locator('dialog.demo-dialog-signin');
+    await dialog.waitFor();
+    await completeSignIn(dialog, 'inline@example.com');
+    await dialog.waitFor({ state: 'detached' });
+
+    // The browser entry moved into the account, exactly once.
+    await page.waitForFunction(() => localStorage.getItem('vitruvian.guest-activities') === '[]');
+    const refreshed = await waitForInlineForm(page);
+    assert.equal((await refreshed.locator('.inline-activity-save').textContent()).trim(), 'Save for review');
+    assert.match(await refreshed.locator('.inline-activity-privacy').textContent(), /visible to reviewers/);
+    await page.waitForFunction(() =>
+      /Pending review/.test(document.querySelector('.inline-activity-status')?.textContent ?? ''));
+    assert.equal((await submissionsFor(page, 'inline@example.com')).length, 1);
+
+    // Re-saving the unchanged response must not create a second submission.
+    await refreshed.locator('.inline-activity-save').click();
+    await page.waitForFunction(() => {
+      const save = document.querySelector('.inline-activity-save');
+      const status = document.querySelector('.inline-activity-status');
+      return Boolean(save) && !save.disabled && !/Saving/.test(status?.textContent ?? '');
+    });
+    assert.equal((await submissionsFor(page, 'inline@example.com')).length, 1, 'an unchanged resave must be idempotent');
+
+    const body = await goToView(page, 'account');
+    await body.locator('.demo-row').waitFor();
+    assert.equal(await body.locator('.demo-row').count(), 1);
+    assert.match(await body.textContent(), /What brought me here is a question about money\./);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a signed-in embedded save reaches User info, states reviewer access, and clears on sign out', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Orientation' });
+  try {
+    await waitForNote(page, 'Orientation');
+    const body = await signInFromAccount(page, 'inline-signed@example.com');
+    await page.locator('#account-back').click();
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('view'));
+    await waitForNote(page, 'Orientation');
+
+    const block = await waitForInlineForm(page);
+    assert.equal((await block.locator('.inline-activity-save').textContent()).trim(), 'Save for review');
+    assert.match(await block.locator('.inline-activity-privacy').textContent(), /visible to reviewers/);
+    assert.equal(await block.locator('.inline-activity-login').isVisible(), false);
+
+    await block.locator('textarea').fill('Saved while signed in.');
+    await block.locator('.inline-activity-save').click();
+    await page.waitForFunction(() =>
+      /Pending review/.test(document.querySelector('.inline-activity-status')?.textContent ?? ''));
+
+    // It is a real submission: User info shows it as pending review.
+    await goToView(page, 'account');
+    await body.locator('.demo-row').waitFor();
+    assert.equal(await body.locator('.demo-row').count(), 1);
+    assert.match(await body.locator('.demo-status').first().textContent(), /Pending/);
+    assert.match(await body.textContent(), /Saved while signed in\./);
+
+    // Signing out clears the account's words from the reader's field.
+    await body.getByRole('button', { name: 'Sign out' }).click();
+    await body.locator('.demo-signin').waitFor();
+    await page.locator('#account-back').click();
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('view'));
+    await waitForNote(page, 'Orientation');
+    await page.waitForFunction(() => document.querySelector('.inline-activity textarea')?.value === '');
+    const after = await waitForInlineForm(page);
+    assert.equal(await after.locator('textarea').inputValue(), '');
+    assert.equal((await after.locator('.inline-activity-save').textContent()).trim(), 'Save response');
+    assert.match(await after.locator('.inline-activity-privacy').textContent(), /only in this browser/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a delayed restored session refuses a browser-only save until the reader submits again', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  try {
+    await waitForNote(page);
+    await mountMockedInline(page, {
+      session: { id: 'account-a', email: 'a@example.com' },
+      rows: [],
+      guests: [],
+    });
+    const block = page.locator('[data-test-inline] .inline-activity');
+    await block.locator('.inline-activity-form').waitFor();
+    assert.equal((await block.locator('.inline-activity-save').textContent()).trim(), 'Save response');
+
+    // Hold the initial session restore open, then submit while the control still
+    // believes the reader is signed out.
+    await page.evaluate(() => window.__setGate('readSession'));
+    await block.locator('textarea').fill('A browser-only answer.');
+    await block.locator('.inline-activity-save').click();
+    await page.waitForFunction(() => window.__mock.readSessionCalls === 1);
+
+    // The save is blocked on init and has written nothing yet.
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 0);
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 0);
+
+    // The session restores now. The save must refuse, explain itself, and show
+    // the account's privacy line, without writing to the account.
+    await page.evaluate(() => window.__releaseGate('readSession', { id: 'account-a', email: 'a@example.com' }));
+    await block.locator('.demo-error:visible').waitFor();
+    assert.match(await block.locator('.demo-error:visible').textContent(), /sign-in changed/i);
+    assert.equal((await block.locator('.inline-activity-save').textContent()).trim(), 'Save for review');
+    assert.match(await block.locator('.inline-activity-privacy').textContent(), /visible to reviewers/);
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 0, 'a browser-only save makes no account write');
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 0);
+    assert.equal(await block.locator('textarea').inputValue(), 'A browser-only answer.',
+      'the words are kept for the second submit');
+
+    // An explicit second submit, now that the account is known, writes once.
+    await block.locator('.inline-activity-save').click();
+    await block.locator('.inline-activity-status').filter({ hasText: 'Pending review' }).waitFor();
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 1);
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 1);
+    assert.equal(await page.evaluate(() => window.__mock.rows[0].reflection), 'A browser-only answer.');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a restored guest import racing an inline save still leaves one submission', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  try {
+    await waitForNote(page);
+    await mountMockedInline(page, {
+      session: { id: 'account-a', email: 'a@example.com' },
+      rows: [],
+      guests: [{
+        id: 'guest-1',
+        noteId: 'Orientation#what-brought-you-here',
+        noteTitle: 'What brought you here?',
+        reflection: 'Why I am here.',
+        at: '2026-11-22T10:00:00.000Z',
+      }],
+    });
+    const block = page.locator('[data-test-inline] .inline-activity');
+    await block.locator('.inline-activity-form').waitFor();
+
+    // Hold the restored import's first read open, then let the reader save the
+    // same words while the import is still in flight.
+    await page.evaluate(() => window.__setGate('listSubmissions'));
+    await page.evaluate(() => { window.__initPromise = window.__ui.init(); });
+    await page.waitForFunction(() => window.__mock.listCalls === 1);
+    await block.locator('textarea').fill('Why I am here.');
+    await block.locator('.inline-activity-save').click();
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 0, 'the save waits for the import');
+
+    // Release the import: it writes the row, and the racing save settles on it.
+    await page.evaluate(() => window.__releaseGate('listSubmissions', []));
+    await block.locator('.inline-activity-status').filter({ hasText: 'Pending review' }).waitFor();
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 1, 'the race creates one row, not two');
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 1);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')).length), 0,
+      'the imported entry left the browser');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a failed local cleanup retries without duplicating and never imports into another account', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  try {
+    await waitForNote(page);
+    // The account write succeeds; the follow-up localStorage cleanup is refused,
+    // so the bound entry has to stay behind for a retry.
+    await page.evaluate(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function patchedSetItem(key, value) {
+        if (key === 'vitruvian.guest-activities' && JSON.parse(value).length === 0) {
+          throw new DOMException('blocked', 'QuotaExceededError');
+        }
+        return original.call(this, key, value);
+      };
+    });
+
+    await mountMockedInline(page, {
+      session: { id: 'account-a', email: 'a@example.com' },
+      rows: [],
+      guests: [{
+        id: 'guest-1',
+        noteId: 'Orientation#what-brought-you-here',
+        noteTitle: 'What brought you here?',
+        reflection: 'Bound to account A.',
+        at: '2026-11-22T10:00:00.000Z',
+      }],
+    });
+    await page.evaluate(() => window.__setGate('createSubmission'));
+    await page.evaluate(() => { window.__initPromise = window.__ui.init(); });
+    await page.waitForFunction(() => window.__mock.creates.length === 1);
+    await page.evaluate(() => window.__releaseGate('createSubmission'));
+    await page.waitForFunction(() => window.__mock.changeCount === 1);
+
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(stored.length, 1, 'the cleanup failure keeps the entry');
+    assert.equal(stored[0].accountId, 'account-a', 'the entry stays bound to the account that wrote it');
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 1);
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 1);
+
+    // Recreate the UI over the same state: a reload. The same account must
+    // recover the earlier write instead of importing the entry a second time.
+    await page.evaluate(() => window.__mount());
+    await page.evaluate(() => window.__ui.init());
+    await page.waitForFunction(() => window.__mock.changeCount === 2);
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 1, 'the retry does not duplicate the row');
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 1);
+
+    // Another account cannot import an entry bound to the first.
+    await page.evaluate(() => { window.__mock.session = { id: 'account-b', email: 'b@example.com' }; });
+    await page.evaluate(() => window.__mount());
+    await page.evaluate(() => window.__ui.init());
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 1, 'account B imports nothing');
+    assert.equal(
+      await page.evaluate(() => window.__mock.rows.filter((row) => row.accountId === 'account-b').length),
+      0,
+    );
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(after[0].accountId, 'account-a', 'the bound entry still belongs to account A');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a manual account save claims a browser response before writing, and cleans up only on a match', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  try {
+    await waitForNote(page);
+    await mountMockedInline(page, {
+      session: { id: 'account-a', email: 'a@example.com' },
+      rows: [],
+      guests: [{
+        id: 'guest-1',
+        noteId: 'Orientation#what-brought-you-here',
+        noteTitle: 'What brought you here?',
+        reflection: 'Why I am here.',
+        at: '2026-11-22T10:00:00.000Z',
+      }],
+    });
+    const block = page.locator('[data-test-inline] .inline-activity');
+    await block.locator('.inline-activity-form').waitFor();
+
+    // Storage refuses the guest key, so the restored session's automatic import
+    // cannot bind the entry. Nothing may reach the account.
+    await page.evaluate(() => {
+      const original = Storage.prototype.setItem;
+      window.__restoreGuestStorage = () => { Storage.prototype.setItem = original; };
+      Storage.prototype.setItem = function patchedSetItem(key, value) {
+        if (key === 'vitruvian.guest-activities') throw new DOMException('blocked', 'QuotaExceededError');
+        return original.call(this, key, value);
+      };
+    });
+    await page.evaluate(() => { window.__initPromise = window.__ui.init(); });
+    await page.waitForFunction(() => window.__mock.changeCount === 1);
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 0, 'a refused import writes no row');
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 0);
+    let stored = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].accountId, undefined, 'the refused import leaves the entry anonymous');
+    assert.equal((await block.locator('.inline-activity-save').textContent()).trim(), 'Save for review');
+
+    // The reader edits the response and saves it to the account. The typed text
+    // differs from the browser-saved one, but the claim still applies first, and
+    // its refusal must stop the account write and keep the words.
+    await block.locator('textarea').fill('A revised answer.');
+    await block.locator('.inline-activity-save').click();
+    await block.locator('.demo-error:visible').waitFor();
+    assert.match(await block.locator('.demo-error:visible').textContent(), /could not prepare/);
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 0, 'a refused claim makes no account write');
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 0);
+    assert.equal(await block.locator('textarea').inputValue(), 'A revised answer.', 'the words are kept for the retry');
+    stored = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(stored[0].accountId, undefined, 'the refused claim leaves the entry anonymous');
+
+    // Permit writes, then save again: the claim must be bound before the row is
+    // sent, and the mismatched local copy must survive the successful write.
+    await page.evaluate(() => window.__restoreGuestStorage());
+    await page.evaluate(() => window.__setGate('createSubmission'));
+    await block.locator('.inline-activity-save').click();
+    await page.waitForFunction(() => window.__mock.creates.length === 1);
+    stored = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(stored[0].accountId, 'account-a', 'the entry is bound before the account write');
+    assert.equal(stored[0].reflection, 'Why I am here.', 'binding does not rewrite the browser-saved response');
+    await page.evaluate(() => window.__releaseGate('createSubmission'));
+    await block.locator('.inline-activity-status').filter({ hasText: 'Pending review' }).waitFor();
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 1);
+    assert.equal(await page.evaluate(() => window.__mock.rows[0].reflection), 'A revised answer.');
+    stored = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(stored.length, 1, 'a mismatched response keeps the local copy');
+    assert.equal(stored[0].accountId, 'account-a');
+
+    // A second anonymous copy whose text matches what the account already holds
+    // is removed after the save, and adds no duplicate row.
+    await page.evaluate(() => {
+      const entries = JSON.parse(localStorage.getItem('vitruvian.guest-activities'));
+      entries.push({
+        id: 'guest-2',
+        noteId: 'Orientation#what-brought-you-here',
+        noteTitle: 'What brought you here?',
+        reflection: 'A revised answer.',
+        at: '2026-11-22T10:05:00.000Z',
+      });
+      localStorage.setItem('vitruvian.guest-activities', JSON.stringify(entries));
+    });
+    await block.locator('textarea').fill('A revised answer.');
+    await block.locator('.inline-activity-save').click();
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')).length === 1);
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), 1, 'a matching save reuses the stored row');
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), 1);
+    stored = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(stored[0].id, 'guest-1', 'only the matching anonymous copy is removed');
+    assert.equal(stored[0].accountId, 'account-a');
+
+    // A later account cannot inherit the entry bound to account A, even when the
+    // harness recreates the UI over the same browser storage.
+    const before = await page.evaluate(() => ({
+      creates: window.__mock.creates.length,
+      rows: window.__mock.rows.length,
+      listCalls: window.__mock.listCalls,
+    }));
+    await page.evaluate(() => { window.__mock.session = { id: 'account-b', email: 'b@example.com' }; });
+    await page.evaluate(() => window.__mount());
+    await page.evaluate(() => window.__ui.init());
+    assert.equal(await page.evaluate(() => window.__mock.creates.length), before.creates, 'account B imports nothing');
+    assert.equal(await page.evaluate(() => window.__mock.rows.length), before.rows);
+    assert.equal(await page.evaluate(() => window.__mock.listCalls), before.listCalls,
+      'account B does not even read submissions for an A-bound entry');
+    assert.equal(
+      await page.evaluate(() => window.__mock.rows.filter((row) => row.accountId === 'account-b').length),
+      0,
+    );
+    stored = await page.evaluate(() => JSON.parse(localStorage.getItem('vitruvian.guest-activities')));
+    assert.equal(stored[0].accountId, 'account-a', 'the entry still belongs to account A');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('an unchanged account save after a reload stays one submission', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Orientation' });
+  try {
+    await waitForNote(page, 'Orientation');
+    const body = await signInFromAccount(page, 'reload-inline@example.com');
+    await page.locator('#account-back').click();
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('view'));
+    await waitForNote(page, 'Orientation');
+
+    const first = await waitForInlineForm(page);
+    await page.waitForFunction(() =>
+      document.querySelector('.inline-activity-save')?.textContent.trim() === 'Save for review');
+    await first.locator('textarea').fill('Kept across a reload.');
+    await first.locator('.inline-activity-save').click();
+    await page.waitForFunction(() =>
+      /Pending review/.test(document.querySelector('.inline-activity-status')?.textContent ?? ''));
+    assert.equal((await submissionsFor(page, 'reload-inline@example.com')).length, 1);
+
+    await page.reload();
+    await waitForNote(page, 'Orientation');
+    const second = await waitForInlineForm(page);
+    await page.waitForFunction(() =>
+      document.querySelector('.inline-activity-save')?.textContent.trim() === 'Save for review');
+    await second.locator('textarea').fill('Kept across a reload.');
+    await second.locator('.inline-activity-save').click();
+    await page.waitForFunction(() =>
+      /Pending review/.test(document.querySelector('.inline-activity-status')?.textContent ?? ''));
+    assert.equal((await submissionsFor(page, 'reload-inline@example.com')).length, 1,
+      'an unchanged save after reload must not add a second submission');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('the home activity link opens Orientation at its heading, and subjects show display titles', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ reading: 'stacked', viewport: { width: 1100, height: 420 } });
+  try {
+    await waitForNote(page, 'Vitruvian');
+    const home = lastPane(page);
+    const activity = home.locator('a[data-note-id="Orientation"][data-heading="what-brought-you-here"]');
+    assert.equal(await activity.count(), 1);
+    assert.equal((await activity.textContent()).trim(), 'What brought you here?');
+    await activity.click();
+    await page.locator('.stack > .pane').nth(1).waitFor();
+    await waitForNote(page, 'Orientation');
+
+    const orientation = lastPane(page);
+    const heading = orientation.locator('#what-brought-you-here');
+    await heading.waitFor();
+    assert.equal(await heading.evaluate((element) => element.tagName), 'H2');
+    assert.equal((await heading.textContent()).trim(), 'What brought you here?');
+    assert.equal(await heading.locator('xpath=ancestor::section[contains(@class, "inline-activity")]').count(), 1);
+    // The anchor really brought the activity into view.
+    await page.waitForFunction(() => {
+      const pane = document.querySelector('.stack > .pane:last-child');
+      const sheet = pane?.querySelector('.pane-sheet');
+      const target = pane?.querySelector('#what-brought-you-here');
+      if (!sheet || !target) return false;
+      const offset = target.getBoundingClientRect().top - sheet.getBoundingClientRect().top;
+      return offset > -40 && offset < 140;
+    });
+
+    // Orientation's body links only to the home page.
+    const bodyLinks = orientation.locator('.note-content p a[data-note-id]');
+    assert.deepEqual(await bodyLinks.evaluateAll((nodes) => nodes.map((node) => node.dataset.noteId)), ['Base Note']);
+
+    // A subject keeps its id but shows its H1 title.
+    await page.goto('/?note=Base Note');
+    await waitForNote(page, 'Vitruvian');
+    const aliases = await lastPane(page).locator('.note-content a[data-note-id]').evaluateAll((nodes) =>
+      nodes.map((node) => [node.dataset.noteId, node.textContent.trim()]));
+    assert.ok(aliases.some(([id, label]) => id === 'Intillectual' && label === 'Intellectual'));
+    assert.ok(aliases.some(([id, label]) => id === 'financial wellness' && label === 'Financial wellness'));
+    assert.ok(aliases.some(([id, label]) => id === 'social skills' && label === 'Social skills'));
+    await lastPane(page).locator('a[data-note-id="Intillectual"]').click();
+    await page.locator('.stack > .pane').nth(1).waitFor();
+    await waitForNote(page, 'Intellectual');
+    assert.equal(await lastPane(page).getAttribute('data-note-id'), 'Intillectual');
+    assert.equal((await lastPane(page).locator('.note-content h1').textContent()).trim(), 'Intellectual');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('the header title goes home, not to Orientation', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({ url: '/?note=Movement' });
+  try {
+    await waitForNote(page, 'Movement');
+    assert.equal(await page.locator('#app-title').getAttribute('title'), 'Home');
+    await page.click('#app-title');
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('note') === 'Base Note');
+    await waitForNote(page, 'Vitruvian');
+    assert.equal(await lastPane(page).getAttribute('data-note-id'), 'Base Note');
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('the embedded activity form fits a phone and stays usable', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage({
+    reading: 'stacked', viewport: config.mobileViewport, reducedMotion: 'reduce', url: '/?note=Orientation' });
+  try {
+    await waitForNote(page, 'Orientation');
+    const form = inlineActivity(page).locator('.inline-activity-form');
+    await form.waitFor();
+
+    for (const width of [430, 390, 360]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.evaluate(() => new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }));
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+        true,
+        `the inline activity does not overflow at ${width}px`,
+      );
+      for (const [name, box] of [
+        ['title', await inlineActivity(page).locator('.inline-activity-title').boundingBox()],
+        ['response', await form.locator('textarea').boundingBox()],
+        ['save', await form.locator('.inline-activity-save').boundingBox()],
+      ]) {
+        assert.ok(box.x >= 0 && box.x + box.width <= width + 0.5, `the ${name} control fits at ${width}px`);
+      }
+    }
+
+    // The form is still usable at the phone width.
+    await page.setViewportSize(config.mobileViewport);
+    await form.locator('textarea').fill('Typed on a phone.');
+    await form.locator('.inline-activity-save').click();
+    await inlineActivity(page).locator('.inline-activity-status').filter({ hasText: 'Saved on this device' }).waitFor();
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -1404,11 +2167,15 @@ test('stacked navigation, Back/Forward, scroll restoration and previews still wo
       return Math.abs(top - expected) <= 2;
     }, offset);
 
-    // Hover previews still need a window tall enough for the card.
+    // Hover previews still need a window tall enough for the card. Orientation
+    // links only to the home page now, so the preview path runs through that.
+    // Return the pane to the top first: Playwright's own scroll would race the
+    // preview, which dismisses itself on any scroll.
     await page.setViewportSize(config.viewport);
-    await lastPane(page).locator('a[data-note-id="Physical wellness"]').first().hover();
-    await page.locator('#preview:not([hidden])').waitFor();
-    assert.match(await page.locator('#preview-content').textContent(), /listen to your body/);
+    await firstSheet.evaluate((element) => element.scrollTo({ top: 0 }));
+    await page.waitForFunction(() => (document.querySelector('.stack > .pane .pane-sheet')?.scrollTop ?? -1) === 0);
+    await lastPane(page).locator('a.note-link[data-note-id="Base Note"]').first().hover();
+    await page.waitForFunction(() => /looking after yourself/.test(document.querySelector('#preview-content')?.textContent ?? ''));
     assert.ok((await page.locator('#preview-content a[data-note-id]').count()) >= 1);
     assert.deepEqual(errors, []);
   } finally {

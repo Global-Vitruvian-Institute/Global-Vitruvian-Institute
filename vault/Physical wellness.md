@@ -1,12 +1,9 @@
 ---
 parents: ["Base Note"]
 ---
-- do what feels right for your body
-- listen to your body
-- you can
-	- run
-	- jump
-	- lift
+# Physical wellness
+
+How do sleep, movement, and rest fit into your day? This part of the guide will explore caring for your body, starting with two short exercises in noticing how it feels.
 
 ## Activities
 

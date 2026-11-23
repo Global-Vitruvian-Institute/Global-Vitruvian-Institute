@@ -4,18 +4,10 @@ parents: ["Physical wellness"]
 ---
 # Movement
 
-Ten minutes of walking or simple mobility.
+A short walk offers a chance to notice how you feel when you have been moving for a while.
 
-## What to do
+If walking is comfortable for you, take about ten minutes at an easy pace. Otherwise, choose a few gentle movements you can do comfortably where you are. There is no distance or number of repetitions to reach.
 
-Walk for ten minutes, or spend ten minutes on joint circles and slow stretches. Pick a pace you can hold without stopping to catch your breath. If you walk, leave the headphones at home for one block.
+Notice how you feel before and afterwards. Did anything change, or did it feel much the same? Either observation gives you something to write about.
 
-## What to notice
-
-What feels stiff before you start and different after ten minutes. Whether your pace follows your mood, or your mood follows your pace.
-
-## Prompt
-
-What felt different after ten minutes?
-
-Related subject: [[Physical wellness]]. Part of [[Activities]].
+Related: [[Physical wellness]], [[Activities]].

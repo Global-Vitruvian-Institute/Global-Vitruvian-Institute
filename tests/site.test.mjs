@@ -56,6 +56,91 @@ test('shareable stack URLs work on GitHub Pages project paths', async () => {
   assert.match(route, /params\.append\(STACK_PARAM, id\)/);
 });
 
+/* ---------------------------------------------- renderer: inline activity --- */
+
+/** The renderer only needs note lookup; a callout test needs no real vault. */
+function stubVault(notes = {}) {
+  return {
+    resolveNote: (name) => {
+      const id = String(name).trim();
+      return notes[id] ? { id, title: notes[id] } : null;
+    },
+    resolveAsset: () => null,
+  };
+}
+
+test('an activity callout renders as a static section: prompt, anchor and rewritten links', () => {
+  const render = createRenderer(stubVault({ 'Base Note': 'Vitruvian' }));
+  const html = render({
+    id: 'Orientation',
+    body: [
+      '# Orientation',
+      '',
+      '> [!activity] What brought you here?',
+      '> Is there something you hope to do differently? See [[Base Note|the home page]].',
+      '>',
+      '> A second paragraph stays its own paragraph.',
+      '',
+      '> An ordinary quote with [[Base Note]].',
+    ].join('\n'),
+  });
+
+  // The section, its title attribute and its heading anchor all agree.
+  assert.match(html, /<section class="inline-activity" data-activity-title="What brought you here\?" data-activity-id="what-brought-you-here" aria-labelledby="what-brought-you-here">/);
+  assert.match(html, /<h2 class="inline-activity-title" id="what-brought-you-here">What brought you here\?<\/h2>/);
+  assert.match(html, /<div class="inline-activity-prompt">/);
+
+  // The prompt keeps its own paragraphs, and its links still resolve.
+  assert.match(html, /<p>Is there something you hope to do differently\? See <a class="note-link" href="\/Base%20Note" data-note-id="Base Note">the home page<\/a>\.<\/p>/);
+  assert.match(html, /<p>A second paragraph stays its own paragraph\.<\/p>/);
+
+  // An ordinary blockquote is untouched.
+  assert.match(html, /<blockquote>\n<p>An ordinary quote with <a class="note-link" href="\/Base%20Note" data-note-id="Base Note">Base Note<\/a>\.<\/p>\n<\/blockquote>/);
+
+  // The Markdown carries no control: the reader adds the form, never the note.
+  assert.doesNotMatch(html, /<form|<textarea|<button/);
+});
+
+test('an activity title is escaped in the attribute and in the heading', () => {
+  const render = createRenderer(stubVault());
+  const html = render({
+    id: 'Escapes',
+    body: '> [!activity] He said "hello" & <b>bold</b> <script>alert(1)</script>\n> Body.',
+  });
+  assert.doesNotMatch(html, /<script>|<b>/);
+  assert.match(html, /data-activity-title="He said &quot;hello&quot; &amp; &lt;b&gt;bold&lt;\/b&gt; &lt;script&gt;alert\(1\)&lt;\/script&gt;"/);
+  assert.match(html, /<h2 class="inline-activity-title" id="[^"]+">He said &quot;hello&quot; &amp; &lt;b&gt;bold&lt;\/b&gt; &lt;script&gt;alert\(1\)&lt;\/script&gt;<\/h2>/);
+});
+
+test('two activities with the same title get distinct, matching anchors', () => {
+  const render = createRenderer(stubVault());
+  const html = render({
+    id: 'Twice',
+    body: [
+      '> [!activity] Notice this',
+      '> First.',
+      '',
+      '> [!activity] Notice this',
+      '> Second.',
+    ].join('\n'),
+  });
+  const headingIds = [...html.matchAll(/<h2 class="inline-activity-title" id="([^"]+)">/g)].map((match) => match[1]);
+  assert.deepEqual(headingIds, ['notice-this', 'notice-this-1']);
+  assert.deepEqual([...html.matchAll(/data-activity-id="([^"]+)"/g)].map((match) => match[1]), headingIds);
+  assert.deepEqual([...html.matchAll(/aria-labelledby="([^"]+)"/g)].map((match) => match[1]), headingIds);
+});
+
+test('a non-activity callout stays an ordinary blockquote', () => {
+  const render = createRenderer(stubVault());
+  const html = render({
+    id: 'Plain',
+    body: '> [!note] Not an activity\n> Keep as a quote.\n\n> [!activity] Real activity\n> Answered here.',
+  });
+  assert.match(html, /<blockquote>\n<p>\[!note\] Not an activity\nKeep as a quote\.<\/p>\n<\/blockquote>/);
+  assert.equal((html.match(/class="inline-activity"/g) ?? []).length, 1);
+  assert.match(html, /data-activity-title="Real activity"/);
+});
+
 /* --------------------------------------------------- build: activity flag --- */
 
 test('the build publishes only a boolean activity flag and no raw frontmatter', async () => {

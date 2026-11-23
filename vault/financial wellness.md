@@ -1,8 +1,9 @@
 ---
 parents: ["Base Note"]
 ---
-think about where your money come and where it go
-there's lots of things in the world impacting your money
+# Financial wellness
+
+A bus fare, lunch, or a monthly subscription can be a useful starting point for thinking about money. These notes will cover spending, saving, and making choices within the money available.
 
 ## Activities
 

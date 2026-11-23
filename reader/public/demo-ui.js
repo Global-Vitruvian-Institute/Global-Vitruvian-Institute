@@ -33,7 +33,7 @@ import {
 } from './demo-model.js';
 import { APPEARANCES, appearanceLabel, currentAppearance, setAppearance } from './appearance.js';
 import { READING_MODES, currentReadingMode, readingModeLabel, setReadingMode } from './reading.js';
-import { addGuestEntry, guestEntryFor, readGuestEntries, removeGuestEntries } from './guest.js';
+import { addGuestEntry, claimGuestEntry, guestEntryFor, readGuestEntries, removeGuestEntries, upsertGuestEntry } from './guest.js';
 
 const EVIDENCE_ACCEPT = [
   ...['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'],
@@ -166,6 +166,9 @@ export function createDemoUi({
   const renderGuard = createPaneRenderGuard();
   /** Object URLs for one render of the account region, revoked with that render. */
   const paneUrls = new WeakMap();
+  /** Inline activity controls by their `> [!activity]` section, for idempotent hydration. */
+  const inlineByBlock = new WeakMap();
+  let inlineCounter = 0;
 
   async function init() {
     if (!initPromise) {
@@ -183,7 +186,12 @@ export function createDemoUi({
         return { ok: ready, error: failure };
       })();
     }
-    return initPromise;
+    const result = await initPromise;
+    // A restored session may still be holding entries saved before sign-in, and
+    // its controls were built while the session was still unknown.
+    refreshInlineActivities();
+    maybeMergeRestoredGuests();
+    return result;
   }
 
   function notifyChange() {
@@ -193,6 +201,7 @@ export function createDemoUi({
   function setSession(account) {
     session = account ?? null;
     notifyChange();
+    refreshInlineActivities();
   }
 
   function notifyDialogChange() {
@@ -430,6 +439,13 @@ export function createDemoUi({
             return;
           }
           setSession(account);
+          // The magic-link path restores a session here rather than through the
+          // dialog's demo branch, so the browser's saved entries move too.
+          try {
+            await mergeGuestEntries(account);
+          } catch {
+            /* the sign-in itself succeeded; the account view reports the rest */
+          }
           announce(`Signed in as ${account.email}.`);
           onSignedIn?.(account);
         } catch (error) {
@@ -452,7 +468,11 @@ export function createDemoUi({
         const { account, created } = await store.signIn(emailField.control.value, codeField.control.value);
         await store.writeSession(account.id);
         setSession(account);
-        await mergeGuestEntries();
+        try {
+          await mergeGuestEntries(account);
+        } catch {
+          /* the sign-in itself succeeded; the account view reports the rest */
+        }
         announce(created
           ? `Local demo account created for ${account.email}.`
           : `Signed in as ${account.email}.`);
@@ -570,39 +590,108 @@ export function createDemoUi({
     }
   }
 
-  /** Move anonymous browser entries into the signed-in account, once. */
-  let mergingGuests = false;
-  async function mergeGuestEntries() {
-    if (!session || mergingGuests) return { merged: 0, kept: 0 };
-    const entries = readGuestEntries();
-    if (!entries.length) return { merged: 0, kept: 0 };
-    mergingGuests = true;
-    const merged = [];
+  let guestMergePromise = null;
+  let guestMergeAccountId = null;
+  let restoredMergeChecked = false;
+  let mergeFailure = null;
+
+  function matchingResponse(rows, accountId, noteId, reflection) {
+    return rows.find((row) => row.accountId === accountId && row.noteId === noteId
+      && row.reflection === reflection && !row.evidence?.length);
+  }
+
+  /** Serialize imports and let inline saves wait for the same in-flight work. */
+  async function mergeGuestEntries(account = session) {
+    if (!account || session?.id !== account.id) return { merged: 0, kept: 0 };
+    if (guestMergePromise) {
+      const sameAccount = guestMergeAccountId === account.id;
+      const result = await guestMergePromise;
+      return sameAccount ? result : mergeGuestEntries(account);
+    }
+    const entries = readGuestEntries().filter((entry) => !entry.accountId || entry.accountId === account.id);
+    if (!entries.length) {
+      mergeFailure = null;
+      return { merged: 0, kept: 0 };
+    }
+    guestMergeAccountId = account.id;
+    guestMergePromise = importGuestEntries(account, entries);
+    try {
+      return await guestMergePromise;
+    } finally {
+      guestMergePromise = null;
+      guestMergeAccountId = null;
+    }
+  }
+
+  async function importGuestEntries(account, entries) {
+    let merged = 0;
     let kept = 0;
     try {
-      for (const entry of entries) {
+      // Recover successful writes after a reload or failed local cleanup.
+      const existing = await store.listSubmissions({ accountId: account.id });
+      for (const [index, snapshot] of entries.entries()) {
+        if (session?.id !== account.id) {
+          kept += entries.length - index;
+          break;
+        }
         try {
-          await store.createSubmission({
-            accountId: session.id,
-            noteId: entry.noteId,
-            noteTitle: entry.noteTitle,
-            reflection: entry.reflection,
-            evidence: [],
-          });
-          merged.push(entry.id);
+          // Bind before sending. If storage refuses this write, nothing is
+          // exported, and a later account cannot inherit an earlier import.
+          const entry = claimGuestEntry(snapshot.id, account.id);
+          if (!entry) throw new Error('The browser could not prepare this response.');
+          let saved = matchingResponse(existing, account.id, entry.noteId, entry.reflection);
+          if (!saved) {
+            const result = await store.createSubmission({
+              accountId: account.id,
+              noteId: entry.noteId,
+              noteTitle: entry.noteTitle,
+              reflection: entry.reflection,
+              evidence: [],
+            });
+            saved = result.submission;
+            existing.push(saved);
+          }
+          const current = readGuestEntries().find((value) => value.id === entry.id);
+          if (current?.reflection === entry.reflection && current.at === entry.at) {
+            if (!removeGuestEntries([entry.id])) kept += 1;
+          }
+          if (session?.id === account.id) {
+            for (const block of document.querySelectorAll('.inline-activity')) {
+              const controller = inlineByBlock.get(block);
+              if (controller?.noteId === entry.noteId) {
+                controller.lastSaved = { accountId: account.id, reflection: entry.reflection, status: saved.status };
+                refreshInlineActivity(controller);
+              }
+            }
+          }
+          merged += 1;
         } catch {
           kept += 1;
         }
       }
-      removeGuestEntries(merged);
-    } finally {
-      mergingGuests = false;
+    } catch {
+      kept = entries.length;
     }
-    if (merged.length) {
-      notifyChange();
-      announce(`${merged.length} saved ${merged.length === 1 ? 'activity' : 'activities'} added to your account.`);
-    }
-    return { merged: merged.length, kept };
+    mergeFailure = kept ? { kept, accountId: account.id } : null;
+    if (merged || kept) notifyChange();
+    if (merged) announce(`${merged} saved ${merged === 1 ? 'activity' : 'activities'} added to your account.`);
+    if (kept) announce('Some responses are still on this device. Try again from User info to finish moving them to your account.');
+    return { merged, kept };
+  }
+
+  /**
+   * A restored signed-in session (a reload, a magic-link return) still needs
+   * the browser's saved entries moved. Fired without awaiting so it cannot
+   * delay or recurse into `init`; the guard keeps it to one attempt per boot.
+   */
+  function maybeMergeRestoredGuests() {
+    if (restoredMergeChecked || !ready || !session) return;
+    restoredMergeChecked = true;
+    mergeGuestEntries(session).catch(() => {
+      // A store-level failure must not break sign-in or note rendering.
+      const kept = readGuestEntries().length;
+      if (kept) mergeFailure = { kept, accountId: session?.id ?? null };
+    });
   }
 
   /* ---------------------------------------------------------- log activity --- */
@@ -940,7 +1029,7 @@ export function createDemoUi({
       });
       fragment.append(built.form);
 
-      const saved = readGuestEntries();
+      const saved = readGuestEntries().filter((entry) => !entry.accountId);
       if (saved.length) {
         const local = section('Saved on this device');
         const list = el('ul', 'demo-list');
@@ -1009,6 +1098,29 @@ export function createDemoUi({
       history.append(list);
     }
     fragment.append(history);
+
+    // Entries the last merge could not import are still in this browser. Say so
+    // plainly and offer the retry, rather than showing an empty portfolio.
+    if (mergeFailure?.kept && mergeFailure.accountId === session.id) {
+      const pending = section('Saved on this device');
+      pending.append(el('p', 'demo-caption',
+        `${mergeFailure.kept} saved ${mergeFailure.kept === 1 ? 'activity is' : 'activities are'} `
+        + 'still on this device. Try again to finish moving them to your account.'));
+      const retryActions = el('div', 'demo-actions');
+      const retry = button('Try again', 'demo-button');
+      retry.addEventListener('click', async () => {
+        retry.disabled = true;
+        try {
+          await mergeGuestEntries(session);
+        } finally {
+          retry.disabled = false;
+          notifyChange();
+        }
+      });
+      retryActions.append(retry);
+      pending.append(retryActions);
+      fragment.append(pending);
+    }
 
     const summary = summarizeStats(data.stats);
     const counts = countByStatus(data.submissions);
@@ -1377,13 +1489,238 @@ export function createDemoUi({
     }
   }
 
+  /* ---------------------------------------------------- inline activities --- */
+
   /**
-   * The one hook into note rendering: a single small control, only for a note
-   * whose frontmatter says `activity: true`. Hover previews never call this, and
-   * the Markdown source never contains it.
+   * A `> [!activity]` callout is rendered by the Markdown layer as a section
+   * with a prompt. The reader answers it in place: one reflection field, no
+   * dialog, no sign-in gate. A guest answer lives in this browser until they
+   * log in; an account answer is a review submission.
+   */
+  function inlineIdentity(block, note) {
+    const title = block.dataset.activityTitle
+      || block.querySelector('.inline-activity-title')?.textContent?.trim()
+      || note?.title
+      || note?.id
+      || 'Activity';
+    const activityId = block.dataset.activityId
+      || block.querySelector('.inline-activity-title')?.id
+      || 'activity';
+    return {
+      activityId,
+      noteId: note?.id ? `${note.id}#${activityId}` : activityId,
+      noteTitle: title,
+    };
+  }
+
+  /**
+   * Bring one control in step with the current session without discarding
+   * unsaved typing. Text that was saved under another account (or under no
+   * account) is cleared, so a sign-out never leaves one account's words sitting
+   * in another's field.
+   */
+  function refreshInlineActivity(controller) {
+    const account = session;
+    const { field, status, save, login, privacy } = controller;
+    if (controller.sessionId && controller.sessionId !== (account?.id ?? null)) {
+      field.control.value = '';
+      field.setError(null);
+      controller.lastSaved = null;
+      controller.guestHydrated = false;
+    }
+    controller.sessionId = account?.id ?? null;
+
+    if (account) {
+      save.textContent = 'Save for review';
+      login.hidden = true;
+      privacy.textContent = 'Saved to your account and visible to reviewers. This is not a private journal.';
+      const previous = controller.lastSaved;
+      if (previous && previous.accountId !== account.id && field.control.value === previous.reflection) {
+        field.control.value = '';
+      }
+      const mine = previous && previous.accountId === account.id;
+      if (!controller.saving) {
+        const label = previous?.status && previous.status !== 'pending' ? statusLabel(previous.status) : 'Pending review';
+        status.textContent = mine
+          ? (field.control.value.trim() === previous.reflection ? `${label} · Saved to your account.` : 'Unsaved changes.')
+          : '';
+      }
+      return;
+    }
+
+    save.textContent = 'Save response';
+    privacy.textContent = 'Saved only in this browser until you log in. Clearing browser data removes it.';
+    const stored = guestEntryFor(controller.noteId);
+    controller.guestSaved = stored?.reflection ?? null;
+    login.hidden = !stored;
+    if (!controller.guestHydrated && !field.control.value && controller.guestSaved) {
+      field.control.value = controller.guestSaved;
+    }
+    controller.guestHydrated = true;
+    if (!controller.saving) status.textContent = controller.guestSaved
+      ? (field.control.value.trim() === controller.guestSaved ? 'Saved on this device.' : 'Unsaved changes.')
+      : '';
+  }
+
+  /** Refresh every embedded activity in the document after a session change. */
+  function refreshInlineActivities() {
+    if (typeof document === 'undefined') return;
+    for (const block of document.querySelectorAll('.inline-activity')) {
+      const controller = inlineByBlock.get(block);
+      if (controller) refreshInlineActivity(controller);
+    }
+  }
+
+  /** Hydrate one embedded activity, idempotently. */
+  function hydrateInlineActivity(block, note) {
+    const existing = inlineByBlock.get(block);
+    if (existing) {
+      refreshInlineActivity(existing);
+      return;
+    }
+    const { noteId, noteTitle } = inlineIdentity(block, note);
+    const idBase = `inline-activity-${++inlineCounter}`;
+    const field = buildField({
+      id: `${idBase}-response`,
+      labelText: 'Your response',
+      rows: 4,
+      maxLength: DEMO_LIMITS.maxReflectionLength,
+    });
+
+    const form = el('form', 'inline-activity-form');
+    form.noValidate = true;
+    const privacy = el('p', 'demo-caption inline-activity-privacy');
+    privacy.id = `${idBase}-privacy`;
+    field.control.setAttribute('aria-describedby', `${field.error.id} ${privacy.id}`);
+    const status = el('p', 'demo-caption inline-activity-status');
+    status.setAttribute('role', 'status');
+    const actions = el('div', 'inline-activity-actions');
+    const save = el('button', 'demo-button demo-button-primary inline-activity-save', 'Save response');
+    save.type = 'submit';
+    const login = button('Log in', 'demo-button inline-activity-login');
+    actions.append(save, status, login);
+    form.append(field.wrap, privacy, actions);
+
+    const prompt = block.querySelector('.inline-activity-prompt');
+    if (prompt?.parentNode) prompt.after(form);
+    else block.append(form);
+
+    const controller = {
+      block, noteId, noteTitle, field, privacy, status, save, login,
+      saving: false, guestSaved: null, guestHydrated: false, lastSaved: null, sessionId: null,
+    };
+    inlineByBlock.set(block, controller);
+    field.control.addEventListener('input', () => {
+      field.setError(null);
+      if (controller.saving) return;
+      const saved = session ? controller.lastSaved?.reflection : controller.guestSaved;
+      if (field.control.value.trim() !== saved && status.textContent !== 'Unsaved changes.') {
+        status.textContent = 'Unsaved changes.';
+      }
+    });
+
+    login.addEventListener('click', () => {
+      openSignInDialog({
+        intro: 'Log in to keep the responses saved in this browser in your portfolio.',
+      });
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (controller.saving) return;
+
+      const checked = validateSubmissionInput({ reflection: field.control.value, files: [] });
+      const problem = checked.errors.reflection ?? (checked.ok ? null : 'Add a short reflection.');
+      field.setError(problem);
+      if (!checked.ok) return;
+
+      // The session is captured before any await: a sign-out or navigation in
+      // the middle of the save must not send this response somewhere else.
+      const sessionAtStart = session?.id ?? null;
+      controller.saving = true;
+      save.disabled = true;
+      status.textContent = 'Saving…';
+      await init();
+      if (guestMergePromise) await guestMergePromise;
+      if (!block.isConnected || (session?.id ?? null) !== sessionAtStart) {
+        controller.saving = false;
+        save.disabled = false;
+        refreshInlineActivity(controller);
+        if (block.isConnected) field.setError('Your sign-in changed. Check who can read this response before saving again.');
+        return;
+      }
+      const account = session;
+
+      if (!account) {
+        const stored = upsertGuestEntry({ noteId, noteTitle, reflection: checked.reflection });
+        controller.saving = false;
+        save.disabled = false;
+        if (!stored) {
+          field.setError('This browser would not store the response.');
+          status.textContent = '';
+          return;
+        }
+        field.setError(null);
+        refreshInlineActivity(controller);
+        notifyChange();
+        announce('Saved on this device. Log in to keep it in your portfolio.');
+        return;
+      }
+
+      try {
+        // A manual account save must honor the same durable ownership boundary
+        // as automatic imports, including when an earlier claim was refused.
+        const anonymous = guestEntryFor(noteId);
+        if (anonymous && !claimGuestEntry(anonymous.id, account.id)) {
+          throw new Error('This browser could not prepare the saved response. It has not been sent to your account.');
+        }
+        const rows = await store.listSubmissions({ accountId: account.id });
+        if (session?.id !== account.id) return;
+        let saved = matchingResponse(rows, account.id, noteId, checked.reflection);
+        if (!saved) {
+          const result = await store.createSubmission({
+            accountId: account.id,
+            noteId,
+            noteTitle,
+            reflection: checked.reflection,
+            evidence: [],
+          });
+          saved = result.submission;
+        }
+        if (anonymous?.reflection === checked.reflection) removeGuestEntries([anonymous.id]);
+        const remaining = readGuestEntries().filter((entry) => !entry.accountId || entry.accountId === account.id);
+        mergeFailure = remaining.length ? { kept: remaining.length, accountId: account.id } : null;
+        if (session?.id === account.id) {
+          controller.lastSaved = { accountId: account.id, reflection: checked.reflection, status: saved.status };
+          field.setError(null);
+          notifyChange();
+        }
+      } catch (error) {
+        if (session?.id === account.id) {
+          field.setError(error?.message ?? 'That response could not be saved.');
+        }
+      } finally {
+        controller.saving = false;
+        save.disabled = false;
+        refreshInlineActivity(controller);
+      }
+    });
+
+    refreshInlineActivity(controller);
+  }
+
+  /**
+   * The one hook into note rendering. Embedded activities are always hydrated;
+   * the standalone `activity: true` control is kept only for notes that carry no
+   * embedded activity, so the two flows never double up. Hover previews never
+   * call this, and the Markdown source never contains either control.
    */
   function decorateArticle(article, note) {
-    if (!article || note?.activity !== true) return;
+    if (!article) return;
+    const blocks = article.querySelectorAll('.inline-activity');
+    for (const block of blocks) hydrateInlineActivity(block, note);
+
+    if (note?.activity !== true || blocks.length) return;
     if (article.querySelector('.demo-log-activity')) return;
     const wrap = el('div', 'demo-activity-actions');
     const log = button('Log activity', 'demo-button demo-button-primary demo-log-activity');

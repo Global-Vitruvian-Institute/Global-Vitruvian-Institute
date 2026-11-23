@@ -1,23 +1,15 @@
 ---
-draft: true
 parents: ["Base Note"]
 ---
 # Orientation
 
-This note says how the guide is arranged and how to use it.
+You may have a question in mind, or you may still be working out what you want to explore. These notes cover health, learning, relationships, and money, with activities to try as you read.
 
-## The loop
+> [!activity] What brought you here?
+> Is there something you would like to understand better, or something you hope to do differently? Write a little about what led you to open this guide. Leave out anything you would rather not share.
 
-Read something. Try it once. Keep what helps.
+The subjects are linked from [[Base Note|the home page]]. You can read them in any order and follow the links between ideas. Some notes include an exercise, with a place to write about what you noticed.
 
-1. Read. Pick any subject from [[Base Note]].
-2. Try. Open one activity it links to and follow the steps.
-3. Keep. Repeat the activity if it helps. Otherwise, leave it.
+You can save a response in this browser without an account. Logging in lets you collect saved activities in a portfolio. Account responses can be read by reviewers, so they are not a private journal.
 
-## First prompt
-
-Write for five minutes about what brought you here. What made you open this guide, and what would you like to be different? Use [[Reflection]] to do the writing.
-
-Subjects: [[Physical wellness]], [[Mental Health]], [[Intillectual]], [[financial wellness]], [[social skills]]. All activities are collected in [[Activities]].
-
-Display and account options are in Settings.
+If you would like to change the colours or reading layout, those options are in Settings.

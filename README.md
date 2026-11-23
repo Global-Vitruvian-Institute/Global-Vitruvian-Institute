@@ -121,7 +121,8 @@ There is no password and no verification email; the code is displayed precisely 
 
 ### Activities, portfolio and review
 
-- A note whose frontmatter says `activity: true` shows one small *Log activity* control after its content. The control never appears in hover previews or in the Markdown source. The activity notes in `vault/` (`Breath`, `Movement`, `Reflection`, `Money check-in`) already carry the flag; `scripts/build.mjs` publishes only that boolean and no other frontmatter.
+- An Obsidian-style `> [!activity] Title` callout embeds an activity in its note. Orientation's **What brought you here?** prompt has a response field and save button directly beneath it—no separate reflection page or sign-in gate. Guest responses stay in this browser and move into the account on sign-in; account responses are visible to reviewers. Hover previews show the prompt only, never a form.
+- Standalone exercise notes (`Breath`, `Movement`, `Money check-in`) still use `activity: true` for the *Log activity* dialog, including file evidence. `scripts/build.mjs` publishes only the boolean, not raw frontmatter.
 - A submission needs a trimmed reflection, a file, or both. New submissions are saved as **pending**.
 - **User info** shows a pinned portfolio gallery, then the complete activity history. Any of your own submissions can be pinned or unpinned whatever its review status, and pinned items remain in the history too.
 - The admin page lists the seeded synthetic participants and any local accounts created in this browser, with per-account pages explored, active time and submissions. Reviews move a submission between **pending**, **verified** and **changes requested**, requesting changes requires feedback, and every review is kept as a timestamped history event.
@@ -131,7 +132,7 @@ There is no password and no verification email; the code is displayed precisely 
 - At most **3 files**, **2 MB each**, **4 MB in total**, per submission.
 - PNG, JPEG, GIF, WebP and AVIF preview inside the page. Everything else — including PDF, text, HTML and SVG — is offered as a download whose bytes are served as `application/octet-stream`, so an uploaded file can never be rendered as markup in this origin.
 - Evidence is stored as raw bytes in IndexedDB alongside its submission, in one transaction: a failed write leaves nothing half-saved. When the account page goes away its preview URLs are revoked.
-- If the browser refuses storage or runs out of room, the reader says so in the dialog and keeps everything you typed; it never falls back to `localStorage`.
+- If the browser refuses storage or runs out of room, the reader reports the error and keeps the input. Account submissions and evidence never fall back to `localStorage`; guest reflections use it explicitly, with browser-only storage explained before saving.
 
 ### Reading statistics
 

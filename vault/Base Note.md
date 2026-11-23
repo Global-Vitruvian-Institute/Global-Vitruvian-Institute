@@ -1,22 +1,26 @@
 # Vitruvian
 
-A short guide to five subjects and four practices you can try today.
+Vitruvian is a guide to looking after yourself and understanding some of the choices that come with growing up. It brings together notes on health, learning, relationships, and money.
 
-## Start here
+## Where to begin
 
-New to the guide? Read [[Orientation]]. It explains the loop and gives you a first prompt.
+[[Orientation]] introduces the guide, with a short writing activity about what brought you here. You can also begin with a subject that interests you.
 
-## Read a subject
+## Subjects
 
-- [[Physical wellness]] (move no think)
-- [[Mental Health]] (feel think)
-- [[Intillectual]] (big think)
-- [[financial wellness]] (money think)
-- [[social skills]] (people think)
+- [[Physical wellness]]
+- [[Mental Health]]
+- [[Intillectual|Intellectual]]
+- [[financial wellness|Financial wellness]]
+- [[social skills|Social skills]]
 
-## Try an activity
+## Activities
 
-- [[Reflection]] — five minutes of writing about what you want.
-- [[Breath]] — five minutes of attention on the breath.
+There are a few activities to try as you read:
 
-The other two are listed in [[Activities]].
+- [[Orientation#What brought you here?|What brought you here?]] — consider what you hope to find.
+- [[Breath]] — pay attention to your breathing.
+- [[Movement]] — take a short walk or try gentle movement.
+- [[Money check-in]] — look at where your money went over a week.
+
+[[Activities]] brings these together on one page.

@@ -4,18 +4,12 @@ parents: ["financial wellness"]
 ---
 # Money check-in
 
-Ten minutes looking at last week's money in and out.
+It is easy to remember one large purchase and overlook several small ones. Looking at a week of spending gives you a more complete picture.
 
-## What to do
+Spend about ten minutes listing the money you received and spent over the last seven days. Include cash if you can remember it. A bank statement can help if you have one, but a notebook is enough.
 
-Open your bank and card statements. For the last seven days, write one line for each amount that came in and each amount that went out. No categories, no judgement, just the numbers. Ten minutes is enough.
+Compare the list with what you expected. Was there anything you had forgotten? What would you choose to spend on again?
 
-## What to notice
+If you save a response, describe what you noticed rather than sharing account numbers or other financial details.
 
-Which outgoings you remember and which you do not. Whether the week's numbers match what you assumed they were.
-
-## Prompt
-
-What did you spend on that you would spend on again?
-
-Related subject: [[financial wellness]]. Part of [[Activities]].
+Related: [[financial wellness]], [[Activities]].

@@ -4,18 +4,14 @@ parents: ["Physical wellness", "Mental Health"]
 ---
 # Breath
 
-Five minutes of attention on the breath, in the style of vipassana: watch the breath, do not change it.
+One exercise used in meditation is to pay attention to the breath without deliberately changing it. The interesting part is noticing how often attention moves somewhere else.
 
-## What to do
+Find a comfortable place to sit for a few minutes. You can keep your eyes open. Notice the air at your nostrils, or the rise and fall of your chest, and let your breathing continue at its own pace.
 
-Sit or lie down. Let the breath be whatever it already is. Put your attention on the air at the nostrils or the rise of the chest. When the mind wanders, note where it went and return to the breath. Five minutes is enough to start.
+When your mind wanders, notice what caught your attention and return to the next breath. Continue for about five minutes, or stop sooner if it feels uncomfortable.
 
-## What to notice
+Afterwards, think about what you noticed. Did your attention keep returning to a particular thought or sound?
 
-The breath shifts on its own. Attention moves without asking. Returning to the breath is the practice, not a sign that you failed at it.
+This is an introductory attention exercise, not a full account of vipassana or other meditation practices.
 
-## Prompt
-
-Where does your attention go most often when you are not directing it?
-
-Related subjects: [[Physical wellness]], [[Mental Health]]. Part of [[Activities]].
+Related: [[Physical wellness]], [[Mental Health]], [[Activities]].

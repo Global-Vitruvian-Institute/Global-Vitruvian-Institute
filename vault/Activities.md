@@ -3,9 +3,11 @@ parents: ["Base Note"]
 ---
 # Activities
 
-Four activities, each tied to a subject. Do one at a time.
+These exercises give you something to try alongside the notes. They do not need to be completed in a particular order.
 
-- [[Reflection]] — five minutes of writing about what you want and why. Related: [[Mental Health]], [[Intillectual]], [[social skills]].
-- [[Breath]] — five minutes of attention on the breath. Related: [[Physical wellness]], [[Mental Health]].
-- [[Movement]] — a ten-minute walk or mobility session. Related: [[Physical wellness]].
-- [[Money check-in]] — ten minutes on last week's money in and out. Related: [[financial wellness]].
+- [[Orientation#What brought you here?|What brought you here?]] asks what you hope to find in the guide.
+- [[Breath]] is a short exercise in paying attention to your breathing.
+- [[Movement]] invites you to notice how you feel before and after moving.
+- [[Money check-in]] looks at a week of money coming in and going out.
+
+Each activity has space to record a response if you want to save one.

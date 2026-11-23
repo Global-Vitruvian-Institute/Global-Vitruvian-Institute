@@ -52,6 +52,63 @@ export function createRenderer(vault, { resolveDesign = () => null } = {}) {
     embedHtml(tokens[index].meta.inner, vault, env?.noteId ?? null)
   md.renderer.rules.wikilink.text = (tokens, index) => tokens[index].meta.inner
 
+  // An activity stays in the note that introduces it. Obsidian-style callouts
+  // remain readable Markdown; only their static prompt is built here. The
+  // reader adds response controls later, never in hover previews.
+  md.core.ruler.push('inline_activities', (state) => {
+    const tokens = state.tokens
+    for (let index = 0; index < tokens.length; index += 1) {
+      if (tokens[index].type !== 'blockquote_open'
+        || tokens[index + 1]?.type !== 'paragraph_open'
+        || tokens[index + 2]?.type !== 'inline') continue
+      const first = tokens[index + 2]
+      const match = first.content.match(/^\[!activity\]\s+([^\n]+)(?:\n([\s\S]*))?$/)
+      if (!match) continue
+      const title = match[1].trim()
+      let end = index + 1
+      let depth = 1
+      for (; end < tokens.length; end += 1) {
+        if (tokens[end].type === 'blockquote_open') depth += 1
+        if (tokens[end].type === 'blockquote_close') depth -= 1
+        if (!depth) break
+      }
+      if (depth) continue
+
+      const open = tokens[index]
+      open.type = 'activity_open'
+      open.tag = 'section'
+      open.attrSet('class', 'inline-activity')
+      open.attrSet('data-activity-title', title)
+      tokens[end].type = 'activity_close'
+      tokens[end].tag = 'section'
+      const promptClose = new state.Token('activity_prompt_close', 'div', -1)
+      promptClose.block = true
+      tokens.splice(end, 0, promptClose)
+
+      const headingOpen = new state.Token('heading_open', 'h2', 1)
+      headingOpen.block = true
+      headingOpen.attrSet('class', 'inline-activity-title')
+      const headingText = new state.Token('inline', '', 0)
+      headingText.content = title
+      const text = new state.Token('text', '', 0)
+      text.content = title
+      headingText.children = [text]
+      const headingClose = new state.Token('heading_close', 'h2', -1)
+      headingClose.block = true
+      const promptOpen = new state.Token('activity_prompt_open', 'div', 1)
+      promptOpen.block = true
+      promptOpen.attrSet('class', 'inline-activity-prompt')
+      const replacement = [headingOpen, headingText, headingClose, promptOpen]
+      if (match[2]?.trim()) {
+        first.content = match[2]
+        first.children = []
+        md.inline.parse(first.content, md, state.env, first.children)
+        replacement.push(tokens[index + 1], first, tokens[index + 3])
+      }
+      tokens.splice(index + 1, 3, ...replacement)
+    }
+  })
+
   // Heading anchors, slugged the way Obsidian slugs them.
   const slugger = new GithubSlugger()
   md.core.ruler.push('heading_ids', (state) => {
@@ -63,6 +120,10 @@ export function createRenderer(vault, { resolveDesign = () => null } = {}) {
       if (!inline || inline.type !== 'inline') continue
       const slug = slugger.slug(inline.content.trim())
       tokens[index].attrSet('id', slug)
+      if (tokens[index - 1]?.type === 'activity_open') {
+        tokens[index - 1].attrSet('data-activity-id', slug)
+        tokens[index - 1].attrSet('aria-labelledby', slug)
+      }
     }
   })
 

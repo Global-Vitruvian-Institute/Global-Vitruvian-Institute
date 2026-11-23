@@ -1559,6 +1559,61 @@ input {
   line-height: 1.5;
 }
 
+/* ---------------------------------------------------- embedded activity --- */
+
+.note-content .inline-activity {
+  margin: 1.5em 0;
+  padding: 20px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface-quiet);
+}
+
+.note-content .inline-activity-title {
+  margin: 0 0 0.6em;
+  font-size: 1.1em;
+}
+
+.note-content .inline-activity-prompt > :last-child {
+  margin-bottom: 0;
+}
+
+.note-content .inline-activity-form {
+  margin: 1em 0 0;
+  font-family: var(--font-ui);
+}
+
+.note-content .inline-activity-form .demo-field {
+  margin-top: 0;
+}
+
+.note-content .inline-activity-form textarea {
+  min-height: 100px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.note-content .inline-activity-privacy {
+  margin: 8px 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.inline-activity-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.note-content .inline-activity-status {
+  margin: 0;
+}
+
+.note-content .inline-activity-login {
+  margin-left: auto;
+}
+
 /* ------------------------------------------------- activity entry point --- */
 
 .note-content .demo-activity-actions {
