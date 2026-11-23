@@ -1,17 +1,17 @@
 /*
  * Vitruvian Institute — the reader.
  *
- * The stack is a single horizontal scroller. Every pane is 625px wide and
+ * The stacked layout is one horizontal scroller. Every pane is 625px wide and
  * sticky at `40px * index`, so as the container scrolls successive panes slide
  * over earlier ones and only the 40px spine of a covered pane stays visible.
- * The constants below are the reference values; changing them changes the
- * geometry the client measures at runtime.
+ * The default page layout lays the same panes out one at a time instead; see
+ * the `[data-reading="page"]` block below.
  *
- * Every colour is a semantic token on :root, and the three built-in light
- * appearances below are token overrides and nothing else. Layout, typography
- * and behaviour are identical in all of them. There is no dark or automatic
- * mode; the saved preset is applied to <html> before first paint by the inline
- * script in index.html.
+ * Every colour is a semantic token on :root. The alternative templates live in
+ * `themes/<id>.css` and override those tokens for the same layout; layout,
+ * typography and behaviour are identical in all of them. There is no dark or
+ * automatic mode; the saved template and reading mode are applied to <html>
+ * before first paint by the inline script in index.html.
  */
 
 :root {
@@ -75,60 +75,6 @@
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-reading: var(--font-ui);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-/* Paper — warm off-white surfaces, the same blue links. */
-:root[data-appearance="paper"] {
-  --bg: #f6f1e8;
-  --surface: #fffcf6;
-  --surface-quiet: #f2ebdf;
-  --ink: #2c2820;
-  --ink-soft: #4c463b;
-  --muted: #6f6759;
-  --rule: #e4dccd;
-  --rule-strong: #cbbfa9;
-  --link: #1d5a9e;
-  --link-hover: #143f72;
-  --link-underline: rgba(29, 90, 158, 0.35);
-  --focus: #1d5a9e;
-  --focus-ring: rgba(29, 90, 158, 0.16);
-  --primary: #1d5a9e;
-  --primary-hover: #164974;
-  --selection: #e6eef8;
-  --hover-fill: rgba(44, 40, 32, 0.07);
-  --code-bg: #f1e9db;
-  --code-ink: #33302a;
-  --pre-bg: #f8f3ea;
-  --evidence-bg: #f8f3ea;
-  --status-verified: #2c6338;
-  --status-changes: #8a5a12;
-}
-
-/* Soft Lilac — neutral light surfaces with restrained violet accents. */
-:root[data-appearance="lilac"] {
-  --bg: #f6f5fa;
-  --surface: #ffffff;
-  --surface-quiet: #f1eff8;
-  --ink: #24222c;
-  --ink-soft: #484456;
-  --muted: #6c6880;
-  --rule: #e4e1ee;
-  --rule-strong: #c8c3da;
-  --link: #5b46b8;
-  --link-hover: #463397;
-  --link-underline: rgba(91, 70, 184, 0.35);
-  --focus: #5b46b8;
-  --focus-ring: rgba(91, 70, 184, 0.16);
-  --primary: #5b46b8;
-  --primary-hover: #463397;
-  --selection: #ebe7fa;
-  --hover-fill: rgba(36, 34, 44, 0.06);
-  --code-bg: #f0eef8;
-  --code-ink: #2b2836;
-  --pre-bg: #f6f5fb;
-  --evidence-bg: #f7f6fc;
-  --status-verified: #2b6344;
-  --status-changes: #85521a;
 }
 
 *,
@@ -1778,5 +1724,61 @@ input {
 
   .account-nav-back {
     padding: 5px 9px;
+  }
+}
+
+/* ------------------------------------------------------------ page mode ---- */
+
+/*
+ * The default reading mode: one note, ordinary links, browser Back. The same
+ * pane markup is laid out as a document rather than as a row, so none of the
+ * stacked geometry or pane controls apply. Stacked tabs stay available as an
+ * advanced preference.
+ */
+:root[data-reading="page"] .stack {
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+:root[data-reading="page"] .pane {
+  position: static;
+  width: auto;
+  max-width: 760px;
+  height: auto;
+  min-height: 100%;
+  margin: 0 auto;
+  border-left: 0;
+  background: var(--surface);
+  box-shadow: none;
+}
+
+:root[data-reading="page"] .pane.is-overlapped {
+  box-shadow: none;
+}
+
+:root[data-reading="page"] .pane-sheet {
+  overflow: visible;
+  height: auto;
+  padding: 56px 40px 96px;
+}
+
+:root[data-reading="page"] .pane-spine,
+:root[data-reading="page"] .pane-close {
+  display: none;
+}
+
+:root[data-reading="page"] .note-content {
+  max-width: 660px;
+}
+
+:root[data-reading="page"] .backlinks {
+  max-width: 660px;
+}
+
+@media (max-width: 800px) {
+  :root[data-reading="page"] .pane-sheet {
+    padding: 32px 20px 72px;
   }
 }

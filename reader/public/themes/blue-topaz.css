@@ -1,0 +1,30 @@
+/*
+ * Blue Topaz — palette adapted from PKM-er/Blue-Topaz_Obsidian-css (MIT).
+ * Source: https://github.com/PKM-er/Blue-Topaz_Obsidian-css
+ * Only colour tokens are borrowed; no theme layout or component CSS.
+ */
+:root[data-appearance="blue-topaz"] {
+  --bg: #ffffff;
+  --surface: #fcfcfc;
+  --surface-quiet: #f4f6f8;
+  --ink: #0e0e0e;
+  --ink-soft: #333333;
+  --muted: #7f7f7f;
+  --rule: #dddddd;
+  --rule-strong: #c3c3c3;
+  --link: hsl(207, 77%, 44%);
+  --link-hover: hsl(207, 77%, 34%);
+  --link-underline: hsla(207, 77%, 44%, 0.35);
+  --focus: hsl(207, 77%, 44%);
+  --focus-ring: hsla(207, 77%, 44%, 0.16);
+  --primary: hsl(207, 77%, 44%);
+  --primary-hover: hsl(207, 77%, 34%);
+  --selection: #e4f0fb;
+  --hover-fill: rgba(14, 14, 14, 0.06);
+  --code-bg: #f3f5f7;
+  --code-ink: #1f2429;
+  --pre-bg: #fafbfc;
+  --evidence-bg: #f7f9fa;
+  --status-verified: #237a4a;
+  --status-changes: #8a5a12;
+}

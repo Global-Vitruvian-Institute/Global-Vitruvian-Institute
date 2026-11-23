@@ -1,0 +1,30 @@
+/*
+ * Things — palette adapted from colineckert/obsidian-things (MIT).
+ * Source: https://github.com/colineckert/obsidian-things
+ * Only colour tokens are borrowed; no theme layout or component CSS.
+ */
+:root[data-appearance="things"] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-quiet: #f6f7f8;
+  --ink: #222222;
+  --ink-soft: #42474e;
+  --muted: hsl(212, 10%, 37%);
+  --rule: #ebedf0;
+  --rule-strong: #ccd1d8;
+  --link: hsl(215, 75%, 48%);
+  --link-hover: hsl(215, 75%, 38%);
+  --link-underline: hsla(215, 75%, 48%, 0.35);
+  --focus: hsl(215, 75%, 48%);
+  --focus-ring: hsla(215, 75%, 48%, 0.16);
+  --primary: hsl(215, 75%, 48%);
+  --primary-hover: hsl(215, 75%, 38%);
+  --selection: #e8f0fd;
+  --hover-fill: rgba(34, 34, 34, 0.06);
+  --code-bg: #f2f4f6;
+  --code-ink: #2b3036;
+  --pre-bg: #f8f9fa;
+  --evidence-bg: #f6f7f8;
+  --status-verified: #237a4a;
+  --status-changes: #8a5a12;
+}

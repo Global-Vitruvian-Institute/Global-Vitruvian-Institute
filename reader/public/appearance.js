@@ -1,15 +1,18 @@
 /**
- * appearance.js — the three built-in light appearances, and one local
+ * appearance.js — the built-in light stylesheet templates, and one local
  * preference.
  *
- * The presets are colour-token overrides in `styles.css`; this module only
- * validates an id, puts it on the root element as `data-appearance`, and
- * remembers it in `localStorage`. Nothing here touches IndexedDB, the demo
- * store or the network, and a browser that refuses `localStorage` keeps the
- * in-memory choice for the rest of the visit instead of failing.
+ * Each template is a real CSS file under `themes/`. The module validates an id,
+ * puts it on the root element as `data-appearance`, swaps the stylesheet link
+ * and remembers the choice in `localStorage`. Nothing here touches IndexedDB,
+ * the demo store or the network, and a browser that refuses `localStorage`
+ * keeps the in-memory choice for the rest of the visit instead of failing.
  *
- * `index.html` repeats the storage key and the three ids in a tiny synchronous
- * script so the saved preset is applied before first paint. `tests/site.test.mjs`
+ * The three Obsidian-inspired palettes adapt only colour tokens from MIT-licensed
+ * themes: Minimal, Things and Blue Topaz. Their source comments carry the URL.
+ *
+ * `index.html` repeats the storage key and the ids in a tiny synchronous script
+ * so the saved template is applied before first paint. `tests/site.test.mjs`
  * keeps the two in step.
  */
 
@@ -38,7 +41,24 @@ export const APPEARANCES = Object.freeze([
     label: 'Soft Lilac',
     description: 'Neutral light surfaces with restrained violet accents.',
   }),
+  Object.freeze({
+    id: 'minimal',
+    label: 'Minimal',
+    description: 'Adapted from the Minimal Obsidian theme: white, grey and quiet type.',
+  }),
+  Object.freeze({
+    id: 'things',
+    label: 'Things',
+    description: 'Adapted from the Things Obsidian theme: white surfaces and a brighter blue.',
+  }),
+  Object.freeze({
+    id: 'blue-topaz',
+    label: 'Blue Topaz',
+    description: 'Adapted from Blue Topaz: crisp white surfaces and saturated blue links.',
+  }),
 ]);
+
+export const APPEARANCE_ATTRIBUTE_LINK = 'theme-stylesheet';
 
 const APPEARANCE_IDS = Object.freeze(APPEARANCES.map((preset) => preset.id));
 
@@ -92,14 +112,27 @@ export function writeStoredAppearance(id, storage = safeStorage()) {
   }
 }
 
-/** Put the preset on the root element and remember it for this session. */
-export function applyAppearance(id, root = globalThis.document?.documentElement) {
+/** Point the template stylesheet at the chosen id, when there is a document. */
+export function applyThemeStylesheet(id, scope = globalThis) {
+  try {
+    const link = scope?.document?.getElementById?.(APPEARANCE_ATTRIBUTE_LINK);
+    if (!link) return false;
+    link.href = `./themes/${normalizeAppearanceId(id)}.css`;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Put the template on the root element and remember it for this session. */
+export function applyAppearance(id, root = globalThis.document?.documentElement, scope = globalThis) {
   current = normalizeAppearanceId(id);
   try {
     root?.setAttribute?.(APPEARANCE_ATTRIBUTE, current);
   } catch {
     /* a root that refuses attributes still leaves the in-memory choice */
   }
+  applyThemeStylesheet(current, scope);
   return current;
 }
 
@@ -108,8 +141,12 @@ export function currentAppearance() {
 }
 
 /** Apply the saved preference. Idempotent with the inline script in the shell. */
-export function initAppearance(root = globalThis.document?.documentElement, storage = safeStorage()) {
-  return applyAppearance(readStoredAppearance(storage), root);
+export function initAppearance(
+  root = globalThis.document?.documentElement,
+  storage = safeStorage(),
+  scope = globalThis,
+) {
+  return applyAppearance(readStoredAppearance(storage), root, scope);
 }
 
 /**
@@ -118,9 +155,9 @@ export function initAppearance(root = globalThis.document?.documentElement, stor
  */
 export function setAppearance(
   id,
-  { root = globalThis.document?.documentElement, storage = safeStorage() } = {},
+  { root = globalThis.document?.documentElement, storage = safeStorage(), scope = globalThis } = {},
 ) {
-  const applied = applyAppearance(id, root);
+  const applied = applyAppearance(id, root, scope);
   const stored = writeStoredAppearance(applied, storage);
   return { id: applied, stored };
 }

@@ -100,6 +100,7 @@ async function openPage({
   viewport = config.viewport,
   url = '/',
   initScript = null,
+  reading = null,
   reducedMotion = null,
   colorScheme = null,
 } = {}) {
@@ -111,6 +112,11 @@ async function openPage({
     ...(colorScheme ? { colorScheme } : {}),
   });
   if (initScript) await context.addInitScript(initScript);
+  if (reading) {
+    await context.addInitScript((mode) => {
+      localStorage.setItem('vitruvian.reading', mode);
+    }, reading);
+  }
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error));
@@ -311,9 +317,18 @@ test('Settings offers the appearance presets with no account at all', { skip: !p
     assert.equal((await body.locator('h1.demo-title').textContent()).trim(), 'Settings');
     assert.equal(await body.locator('.demo-signin').count(), 0, 'Settings needs no session');
 
+    const layout = body.locator('#demo-reading-mode');
+    await layout.waitFor();
+    assert.deepEqual(await layout.locator('option').allTextContents(), ['Page', 'Stacked tabs (advanced)']);
+    assert.equal(await layout.inputValue(), 'page');
+    assert.equal(await body.locator('label[for="demo-reading-mode"]').count(), 1);
+
     const select = body.locator('#demo-appearance');
     await select.waitFor();
-    assert.deepEqual(await select.locator('option').allTextContents(), ['Clear', 'Paper', 'Soft Lilac']);
+    assert.deepEqual(
+      await select.locator('option').allTextContents(),
+      ['Clear', 'Paper', 'Soft Lilac', 'Minimal', 'Things', 'Blue Topaz'],
+    );
     assert.equal(await select.inputValue(), 'clear');
     assert.equal(await select.evaluate((element) => element.tagName), 'SELECT');
     // The control is labelled, and its hint is associated.
@@ -722,6 +737,7 @@ test('account views accrue no reading time or pages, and a closed dialog cannot 
 
 test('Return to notes keeps the reading URL, stack, horizontal position and scroll offsets', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage({
+    reading: 'stacked',
     viewport: { width: 1000, height: 320 },
     url: '/?note=Orientation',
   });
@@ -785,6 +801,7 @@ test('Return to notes keeps the reading URL, stack, horizontal position and scro
 
 test('account views work on direct load, reload, Back/Forward and a project subpath', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage({
+    reading: 'stacked',
     url: `${config.projectPath}/?note=Breath&stackedNotes=Movement&view=settings`,
   });
   try {
@@ -850,6 +867,7 @@ test('an account view works, and returning to the notes explains itself, when th
 
 test('a legacy demo pane URL is migrated to the full-page region, keeping the real notes', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage({
+    reading: 'stacked',
     url: '/?note=Breath&stackedNotes=demo%3Aaccount&stackedNotes=Movement',
   });
   try {
@@ -888,7 +906,7 @@ test('Random and Search leave the account region and open notes', { skip: !playw
     await page.click('#random-button');
     await page.waitForFunction(() => !document.querySelector('#stack').hidden);
     await page.waitForFunction(() => !new URL(location.href).searchParams.has('view'));
-    await page.waitForFunction(() => document.querySelectorAll('.stack > .pane').length === 2);
+    await page.waitForFunction(() => document.querySelectorAll('.stack > .pane').length === 1);
     await waitForNote(page);
 
     // Search works from an account view too.
@@ -907,7 +925,7 @@ test('Random and Search leave the account region and open notes', { skip: !playw
 });
 
 test('only the exposed region is focusable, and a view change moves focus to its heading', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage();
+  const { context, page, errors } = await openPage({ reading: 'stacked' });
   try {
     await waitForNote(page);
     // Two panes, so a pane-close control exists to test with.
@@ -1195,9 +1213,53 @@ test('the activity control never appears in a preview or in the Markdown', { ski
 
 /* ------------------------------------------------------ reader regressions --- */
 
+test('page mode follows ordinary links, with browser Back as the path', { skip: !playwright }, async () => {
+  const { context, page, errors } = await openPage();
+  try {
+    await waitForNote(page, 'Base Note');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.reading), 'page');
+    assert.equal(await paneCount(page), 1);
+    assert.equal(await page.locator('.pane-spine').isVisible(), false);
+    assert.equal(await page.locator('.pane-close').count(), 0);
+
+    await lastPane(page).locator('a[data-note-id="Physical wellness"]').first().click();
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('note') === 'Physical wellness');
+    await waitForNote(page, 'Physical wellness');
+    assert.equal(await paneCount(page), 1);
+    assert.equal(new URL(page.url()).searchParams.has('stackedNotes'), false);
+
+    await page.goBack();
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('note') === 'Base Note');
+    await waitForNote(page, 'Base Note');
+    assert.equal(await paneCount(page), 1);
+
+    // The advanced layout is a preference, and switching back closes the row.
+    await goToView(page, 'settings');
+    await page.locator('#demo-reading-mode').selectOption('stacked');
+    await page.waitForFunction(() => document.documentElement.dataset.reading === 'stacked');
+    await page.locator('#account-back').click();
+    await waitForNote(page);
+    await lastPane(page).locator('a[data-note-id="Physical wellness"]').first().click();
+    await page.waitForFunction(() => document.querySelectorAll('.stack > .pane').length === 2);
+    await page.locator('#user-info-button').click();
+    await page.locator('#account-back').click();
+    await waitForNote(page);
+    await goToView(page, 'settings');
+    await page.locator('#demo-reading-mode').selectOption('page');
+    await page.waitForFunction(() => document.documentElement.dataset.reading === 'page');
+    await page.locator('#account-back').click();
+    await page.waitForFunction(() => document.querySelectorAll('.stack > .pane').length === 1);
+    await waitForNote(page);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test('stacked navigation, Back/Forward, scroll restoration and previews still work', { skip: !playwright }, async () => {
   // The vault notes are short, so a short window is what makes a pane scrollable.
-  const { context, page, errors } = await openPage({ viewport: { width: 1280, height: 300 }, url: '/?note=Orientation' });
+  const { context, page, errors } = await openPage({
+    reading: 'stacked', viewport: { width: 1280, height: 300 }, url: '/?note=Orientation' });
   try {
     await waitForNote(page, 'Orientation');
     assert.equal(await paneCount(page), 1);
@@ -1242,7 +1304,8 @@ test('stacked navigation, Back/Forward, scroll restoration and previews still wo
 });
 
 test('search, backlinks and the subpath build still work', { skip: !playwright }, async () => {
-  const { context, page, errors } = await openPage({ url: `${config.projectPath}/` });
+  const { context, page, errors } = await openPage({
+    reading: 'stacked', url: `${config.projectPath}/` });
   try {
     // GitHub Pages project path: the default note loads, and the reader keeps
     // writing its own relative URLs under the prefix.
@@ -1277,7 +1340,8 @@ test('search, backlinks and the subpath build still work', { skip: !playwright }
 test('the mobile layout keeps the header and both regions usable', { skip: !playwright }, async () => {
   // Reduced motion turns the search field's width transition off, so each
   // breakpoint can be measured the moment the viewport changes.
-  const { context, page, errors } = await openPage({ viewport: config.mobileViewport, reducedMotion: 'reduce' });
+  const { context, page, errors } = await openPage({
+    reading: 'stacked', viewport: config.mobileViewport, reducedMotion: 'reduce' });
   try {
     await waitForNote(page);
     await lastPane(page).locator('a[data-note-id="Physical wellness"]').first().click();

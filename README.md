@@ -1,6 +1,10 @@
 # Vitruvian Institute
 
-A static, stacked-pane reader for the Markdown in `vault/`. Edit notes in Obsidian; Markdown is the source of truth. Following a wikilink opens another pane, preserving your reading path. Includes search, backlinks, hover previews and shareable stacks.
+A static reader for the Markdown in `vault/`. Edit notes in Obsidian; Markdown is the source of truth.
+
+Notes open one page at a time by default: wikilinks are ordinary links, and browser Back is the reading path. **Settings → Reading** offers stacked tabs as an advanced mode, where earlier notes stay open to the left. Search, backlinks, hover previews, and full-page User info / Settings / Admin are available in both modes.
+
+**Settings → Appearance** chooses a stylesheet template. The Clear, Paper, and Soft Lilac templates are local. Minimal, Things, and Blue Topaz only adapt colour tokens from MIT-licensed Obsidian themes; sources are cited in `reader/public/themes/`. No theme layout or component CSS is copied.
 
 A small **browser-only participation demo** sits on top of the reader: notes marked `activity: true` gain a *Log activity* control, and a **User info** entry in the header opens a local account page with a pinned portfolio, an activity history and an admin review page. It is a modest illustration of how participating *might* work later — not a product, and not a substitute for the guide. The Markdown guide is the primary content and its notes are still being authored. There is no server, no real authentication and no email — see [Local participation demo](#local-participation-demo).
 
@@ -90,6 +94,10 @@ Active time and distinct pages are measured only for the signed-in reader, only 
 ### Clearing local data
 
 **User info → Clear local demo data** asks for confirmation, then removes every local account, submission, uploaded file and reading statistic for this origin and restores the synthetic fixtures. Clearing browser storage for the site has the same effect.
+
+## Production
+
+See [docs/production-plan.md](docs/production-plan.md) for the staging and production plan with Supabase. The participation features remain a browser-only mock until that work is done.
 
 ## Reader provenance
 

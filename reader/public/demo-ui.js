@@ -32,6 +32,7 @@ import {
   validateVerificationCode,
 } from './demo-model.js';
 import { APPEARANCES, appearanceLabel, currentAppearance, setAppearance } from './appearance.js';
+import { READING_MODES, currentReadingMode, readingModeLabel, setReadingMode } from './reading.js';
 
 const EVIDENCE_ACCEPT = [
   ...['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'],
@@ -138,6 +139,7 @@ export function createDemoUi({
   store,
   announce = () => {},
   openView = () => {},
+  changeReadingMode = null,
   settleTracking = async () => {},
   beforeReset = null,
   afterReset = null,
@@ -860,9 +862,40 @@ export function createDemoUi({
     fragment.append(el('p', 'demo-lede',
       'A few appearance choices for this browser. Nothing here is sent anywhere, and no account is needed.'));
 
+    const layout = section('Reading');
+    const layoutField = el('div', 'demo-field');
+    const layoutLabel = el('label', 'demo-label', 'How notes open');
+    layoutLabel.htmlFor = 'demo-reading-mode';
+    const layoutSelect = document.createElement('select');
+    layoutSelect.id = 'demo-reading-mode';
+    layoutSelect.className = 'demo-control demo-select';
+    for (const mode of READING_MODES) {
+      const option = el('option', '', mode.label);
+      option.value = mode.id;
+      if (mode.id === currentReadingMode()) option.selected = true;
+      layoutSelect.append(option);
+    }
+    const layoutHint = el('p', 'demo-hint');
+    layoutHint.id = 'demo-reading-mode-hint';
+    const describeLayout = (id) => READING_MODES.find((mode) => mode.id === id)?.description ?? '';
+    layoutHint.textContent = describeLayout(currentReadingMode());
+    layoutSelect.setAttribute('aria-describedby', 'demo-reading-mode-hint');
+    layoutSelect.addEventListener('change', () => {
+      const applied = changeReadingMode
+        ? changeReadingMode(layoutSelect.value)
+        : setReadingMode(layoutSelect.value).id;
+      layoutHint.textContent = describeLayout(applied);
+      announce(`Notes open as ${readingModeLabel(applied).toLowerCase()}.`);
+    });
+    layoutField.append(layoutLabel, layoutSelect, layoutHint);
+    layout.append(layoutField);
+    layout.append(el('p', 'demo-caption',
+      'Page is the default: one note, ordinary links and browser Back. Stacked tabs keep earlier notes open to the left.'));
+    fragment.append(layout);
+
     const appearance = section('Appearance');
     const field = el('div', 'demo-field');
-    const label = el('label', 'demo-label', 'Colour preset');
+    const label = el('label', 'demo-label', 'Stylesheet template');
     label.htmlFor = 'demo-appearance';
 
     const select = document.createElement('select');

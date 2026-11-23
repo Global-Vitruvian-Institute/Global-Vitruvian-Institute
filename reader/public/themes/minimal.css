@@ -1,0 +1,30 @@
+/*
+ * Minimal — palette adapted from kepano/obsidian-minimal (MIT).
+ * Source: https://github.com/kepano/obsidian-minimal
+ * Only colour tokens are borrowed; no theme layout or component CSS.
+ */
+:root[data-appearance="minimal"] {
+  --bg: #ffffff;
+  --surface: hsl(0, 0%, 100%);
+  --surface-quiet: hsl(0, 0%, 96%);
+  --ink: hsl(0, 0%, 6%);
+  --ink-soft: hsl(0, 0%, 26%);
+  --muted: hsl(0, 0%, 46%);
+  --rule: hsl(0, 0%, 90%);
+  --rule-strong: hsl(0, 0%, 78%);
+  --link: hsl(201, 17%, 42%);
+  --link-hover: hsl(201, 20%, 32%);
+  --link-underline: hsla(201, 17%, 42%, 0.35);
+  --focus: hsl(201, 17%, 42%);
+  --focus-ring: hsla(201, 17%, 42%, 0.16);
+  --primary: hsl(201, 17%, 42%);
+  --primary-hover: hsl(201, 20%, 32%);
+  --selection: hsl(201, 17%, 93%);
+  --hover-fill: hsla(0, 0%, 0%, 0.06);
+  --code-bg: hsl(0, 0%, 96%);
+  --code-ink: hsl(0, 0%, 12%);
+  --pre-bg: hsl(0, 0%, 97%);
+  --evidence-bg: hsl(0, 0%, 96%);
+  --status-verified: hsl(145, 45%, 30%);
+  --status-changes: hsl(32, 70%, 32%);
+}

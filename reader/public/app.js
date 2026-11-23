@@ -32,6 +32,7 @@ import {
   VIEW_SETTINGS,
 } from './view-route.js';
 import { initAppearance } from './appearance.js';
+import { currentReadingMode, initReadingMode, setReadingMode } from './reading.js';
 
 /** The page title for each region; the reader's own title is the note's. */
 const VIEW_TITLES = Object.freeze({
@@ -205,6 +206,12 @@ function routeFromUrl() {
 
   let nextIds = ids;
   let needsReplace = parsed.changed || invalid;
+  // Page mode shows one note. An older stacked URL still opens its newest note
+  // rather than a row the reader did not ask for.
+  if (currentReadingMode() === 'page' && nextIds.length > 1) {
+    nextIds = [nextIds[nextIds.length - 1]];
+    needsReplace = true;
+  }
   if (!nextIds.length && state.bootstrap?.defaultNoteId) {
     nextIds = [state.bootstrap.defaultNoteId];
     needsReplace = true;
@@ -1198,8 +1205,11 @@ function navigateFromPane(index, id, heading) {
   const safeIndex = state.stack.length
     ? Math.max(0, Math.min(index, state.stack.length - 1))
     : 0;
-  const next = state.stack.slice(0, safeIndex + 1);
-  next.push(id);
+  // Page mode follows a link to one page, so browser Back is the path; stacked
+  // mode keeps the earlier panes and appends to the right of the clicked one.
+  const next = currentReadingMode() === 'page'
+    ? [id]
+    : [...state.stack.slice(0, safeIndex + 1), id];
 
   // Selecting a note always leaves the account region and writes the reading
   // URL, so Random and Search keep working from User info, Settings and Admin.
@@ -1223,6 +1233,7 @@ function navigateFromPane(index, id, heading) {
  * pane you just closed, so closing is never destructive.
  */
 function closePane(index) {
+  if (currentReadingMode() === 'page') return;
   if (!state.ready || state.stack.length <= 1) return;
   if (index < 0 || index >= state.stack.length) return;
 
@@ -1708,6 +1719,17 @@ function initDemo() {
     store: demoStore,
     announce,
     openView: (view) => goToView(view),
+    changeReadingMode: (id) => {
+      const { id: applied } = setReadingMode(id);
+      const ids = currentReadingMode() === 'page' ? state.stack.slice(-1) : state.stack;
+      if (!ids.length) return applied;
+      // Keep the URL and the visible stack in step with the new layout.
+      writeRouteUrl(ids, { view: state.view, hash: state.routeHash ?? '', replace: true });
+      state.stack = ids;
+      if (state.view === VIEW_READER) renderStack({ animate: false });
+      syncAccountNav(state.view);
+      return applied;
+    },
     // Statistics must include the stretch the reader just finished, so settle
     // the tracker and let its write land before a demo view reads them.
     settleTracking: async () => {
@@ -1973,5 +1995,6 @@ els.key.textContent = isMac() ? '⌘K' : 'Ctrl K';
 // The inline script in the shell has already applied the saved preset; this
 // re-reads it so the module's in-memory choice matches what is on screen.
 initAppearance();
+initReadingMode();
 boot();
 initDemo();

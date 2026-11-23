@@ -7,19 +7,28 @@
     <title>Vitruvian Institute</title>
     <script>
       /*
-       * Apply the saved appearance before first paint, so the shell never
-       * flashes the default preset on the way to another one. Kept in step with
-       * reader/public/appearance.js (APPEARANCE_KEY and APPEARANCES) by
-       * tests/site.test.mjs; there is no dark mode to flash through.
+       * Apply the saved template and reading mode before first paint. The theme
+       * stylesheet is created here so a saved template is the first one loaded.
+       * Kept in step with appearance.js and reading.js by tests/site.test.mjs.
        */
       (function () {
         try {
           var saved = window.localStorage.getItem('vitruvian.appearance');
-          if (saved === 'clear' || saved === 'paper' || saved === 'lilac') {
-            document.documentElement.setAttribute('data-appearance', saved);
-          }
+          if (saved !== 'clear' && saved !== 'paper' && saved !== 'lilac' && saved !== 'minimal' && saved !== 'things' && saved !== 'blue-topaz') saved = 'clear';
+          document.documentElement.setAttribute('data-appearance', saved);
+          var theme = document.createElement('link');
+          theme.rel = 'stylesheet';
+          theme.id = 'theme-stylesheet';
+          theme.href = './themes/' + saved + '.css';
+          document.head.appendChild(theme);
         } catch (error) {
-          /* storage is refused; the default preset applies */
+          /* storage is refused; the default template applies */
+        }
+        try {
+          var reading = window.localStorage.getItem('vitruvian.reading');
+          document.documentElement.setAttribute('data-reading', reading === 'stacked' ? 'stacked' : 'page');
+        } catch (error) {
+          document.documentElement.setAttribute('data-reading', 'page');
         }
       })();
     </script>

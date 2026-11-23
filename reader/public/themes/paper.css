@@ -1,0 +1,29 @@
+/*
+ * Paper — warm off-white surfaces, the same blue links.
+ * Local template for this reader, not a copy of an Obsidian theme.
+ */
+:root[data-appearance="paper"] {
+  --bg: #f6f1e8;
+  --surface: #fffcf6;
+  --surface-quiet: #f2ebdf;
+  --ink: #2c2820;
+  --ink-soft: #4c463b;
+  --muted: #6f6759;
+  --rule: #e4dccd;
+  --rule-strong: #cbbfa9;
+  --link: #1d5a9e;
+  --link-hover: #143f72;
+  --link-underline: rgba(29, 90, 158, 0.35);
+  --focus: #1d5a9e;
+  --focus-ring: rgba(29, 90, 158, 0.16);
+  --primary: #1d5a9e;
+  --primary-hover: #164974;
+  --selection: #e6eef8;
+  --hover-fill: rgba(44, 40, 32, 0.07);
+  --code-bg: #f1e9db;
+  --code-ink: #33302a;
+  --pre-bg: #f8f3ea;
+  --evidence-bg: #f8f3ea;
+  --status-verified: #2c6338;
+  --status-changes: #8a5a12;
+}

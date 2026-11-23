@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, mkdir, rm, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadVault, loadFrontmatterParser } from '../reader/src/vault.js';
@@ -153,9 +154,10 @@ test('the shell applies the saved appearance before first paint, in step with ap
   assert.match(html, new RegExp(`localStorage\\.getItem\\('${key}'\\)`));
 
   const ids = [...appearance.matchAll(/^ {4}id: '([a-z-]+)',$/gm)].map((match) => match[1]);
-  assert.deepEqual(ids, ['clear', 'paper', 'lilac']);
+  assert.deepEqual(ids, ['clear', 'paper', 'lilac', 'minimal', 'things', 'blue-topaz']);
   for (const id of ids) {
-    assert.match(html, new RegExp(`saved === '${id}'`), `the shell must accept the ${id} preset`);
+    assert.match(html, new RegExp(`'${id}'`), `the shell must accept the ${id} template`);
+    assert.ok(existsSync(`reader/public/themes/${id}.css`), `themes/${id}.css must exist`);
   }
   // The inline script must run before the stylesheet, so nothing flashes.
   assert.ok(html.indexOf('vitruvian.appearance') < html.indexOf('rel="stylesheet"'));
@@ -200,7 +202,7 @@ test('account views are a separate page region, not panes in the stack', async (
   assert.match(app, /if \(isAccountView\(state\.view\)\) \{\n\s*tracker\?\.setActiveNote\(null\);/);
 
   // The saved preference is applied before the chrome renders.
-  assert.match(app, /initAppearance\(\);\nboot\(\);\ninitDemo\(\);/);
+  assert.match(app, /initAppearance\(\);\ninitReadingMode\(\);\nboot\(\);\ninitDemo\(\);/);
 });
 
 test('the demo is additive: it decorates rendered notes and cannot block them', async () => {
@@ -268,9 +270,13 @@ test('demo styling is namespaced, reuses the reader tokens and stays light', asy
   assert.doesNotMatch(body, /#[0-9a-fA-F]{3,8}\b/, 'the stylesheet must use semantic tokens');
   assert.doesNotMatch(body, /rgba\(/, 'the stylesheet must use semantic tokens');
 
-  // Exactly three presets: the default :root plus two overrides, all light.
-  assert.equal((css.match(/:root\[data-appearance=/g) ?? []).length, 2);
-  assert.match(css, /:root\[data-appearance="paper"\]/);
-  assert.match(css, /:root\[data-appearance="lilac"\]/);
+  // The base stylesheet holds one default token block; templates are files.
+  assert.equal((css.match(/:root\[data-appearance=/g) ?? []).length, 0);
+  for (const id of ['paper', 'lilac', 'minimal', 'things', 'blue-topaz']) {
+    const theme = await readFile(`reader/public/themes/${id}.css`, 'utf8');
+    assert.match(theme, new RegExp(`:root\\[data-appearance="${id}"\\]`));
+    assert.doesNotMatch(theme, /prefers-color-scheme:\s*dark/);
+    assert.doesNotMatch(theme, /@import|url\(/);
+  }
   assert.doesNotMatch(css, /prefers-color-scheme:\s*dark/);
 });

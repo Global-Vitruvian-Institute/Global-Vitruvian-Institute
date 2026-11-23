@@ -59,8 +59,8 @@ function throwingStorage() {
   };
 }
 
-test('there are exactly three built-in light presets, and clear is the default', () => {
-  assert.deepEqual(APPEARANCES.map((preset) => preset.id), ['clear', 'paper', 'lilac']);
+test('there are six built-in light templates, and clear is the default', () => {
+  assert.deepEqual(APPEARANCES.map((preset) => preset.id), ['clear', 'paper', 'lilac', 'minimal', 'things', 'blue-topaz']);
   assert.equal(APPEARANCE_DEFAULT, 'clear');
   assert.equal(APPEARANCE_ATTRIBUTE, 'data-appearance');
   assert.equal(APPEARANCE_KEY, 'vitruvian.appearance');
