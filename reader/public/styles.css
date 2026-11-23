@@ -1747,18 +1747,18 @@ input {
   display: block;
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--bg);
+  background: var(--surface);
 }
 
 :root[data-reading="page"] .pane {
   position: static;
   width: auto;
-  max-width: 760px;
+  max-width: none;
   height: auto;
   min-height: 100%;
-  margin: 0 auto;
+  margin: 0;
   border-left: 0;
-  background: var(--surface);
+  background: transparent;
   box-shadow: none;
 }
 
