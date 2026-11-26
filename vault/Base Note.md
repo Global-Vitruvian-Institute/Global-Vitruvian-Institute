@@ -25,4 +25,8 @@ There are a few activities to try as you read:
 
 [[Activities]] brings these together on one page.
 
+## World data
+
+[[World data]] collects a few charts from Our World in Data: population, life expectancy, mental health, schooling, money, and time spent with other people. Each chart loads only when you ask for it.
+
 *AI-written draft.*

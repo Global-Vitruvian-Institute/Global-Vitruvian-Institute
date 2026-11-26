@@ -11,6 +11,16 @@ Keep the amount of text small, but use natural, complete sentences. A request fo
 - Keep an activity beside the idea that introduces it. A generic “Reflection” page adds an unnecessary detour.
 - Never demand personal disclosure. Explain where saved writing goes and who can read it before submission.
 - Markdown remains the source. Use `> [!activity] A specific question` for an embedded prompt; the reader supplies the response field.
+- Use `> [!chart] A specific title` with a caption and an Our World in Data grapher link for a chart:
+
+  ```md
+  > [!chart] How long people live, on average
+  > Period life expectancy is the number of years someone born in a given year would live if death rates stayed as they were then.
+  > https://ourworldindata.org/grapher/life-expectancy
+  ```
+
+  The first line is the title, the link is the embed, and the other lines are the caption. Only `ourworldindata.org` and `archive.ourworldindata.org` grapher links are accepted; anything else stays inert text instead of a frame. Describe what the chart shows or what to look at, and never invent a number: the chart states its own data, and its title, subtitle and source are visible on Our World in Data.
+- A chart is not fetched until the reader presses **Load chart**, so a note cannot contact another site on its own. Say so when a page collects several charts, as [[World data]] does.
 - Linking notes supports exploration; it does not require a course sequence.
 
 ## Sources read for this pass

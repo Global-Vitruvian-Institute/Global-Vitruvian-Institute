@@ -15,6 +15,7 @@
  * No build step and no dependencies: this file is loaded directly as a module.
  */
 
+import { decorateChartEmbeds } from './chart-embed.js';
 import { fetchStatic as fetch } from './static-api.js';
 import { wikipediaArticle } from './wikipedia.js';
 import { designPaneLayout, designContextRequest, designContextHeading } from './design-context.js';
@@ -847,6 +848,8 @@ async function fillPane(pane, id, index, token, { heading, hash = '', animate })
 
     article.removeAttribute('aria-busy');
     article.innerHTML = note.html;
+    // A chart card is static Markdown until the reader asks for the chart.
+    decorateChartEmbeds(article);
     renderBreadcrumbs(article, note);
     if (note.source === 'wikipedia') renderWikipediaSource(article, note.sourceUrl);
     renderBacklinks(backlinks, note);

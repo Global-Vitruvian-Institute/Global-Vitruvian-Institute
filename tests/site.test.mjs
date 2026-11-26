@@ -141,6 +141,149 @@ test('a non-activity callout stays an ordinary blockquote', () => {
   assert.match(html, /data-activity-title="Real activity"/);
 });
 
+/* -------------------------------------------------------- renderer: charts --- */
+
+test('a chart callout renders a card the reader has to ask for, never a frame', () => {
+  const render = createRenderer(stubVault({ 'Base Note': 'Vitruvian' }));
+  const html = render({
+    id: 'World data',
+    body: [
+      '# World data',
+      '',
+      '> [!chart] How many people live in the world',
+      '> The United Nations estimates every country each year. See [[Base Note|the home page]].',
+      '> https://ourworldindata.org/grapher/population-and-demography?tab=map&country=CHN~IND~USA',
+      '',
+      '> An ordinary quote stays a quote.',
+    ].join('\n'),
+  });
+
+  // The card, its title, its caption and its source link all come from the note.
+  assert.match(html, /<figure class="chart-embed" data-chart-src="https:\/\/ourworldindata\.org\/grapher\/population-and-demography\?tab=map&amp;country=CHN~IND~USA" data-chart-title="How many people live in the world">/);
+  assert.match(html, /<figcaption class="chart-embed-head"><p class="chart-embed-title">How many people live in the world<\/p>/);
+  assert.match(html, /<p class="chart-embed-text">The United Nations estimates every country each year\. See <a class="note-link" href="\/Base%20Note" data-note-id="Base Note">the home page<\/a>\.<\/p>/);
+  assert.match(html, /<button class="chart-embed-load" type="button" data-chart-load>Load chart<\/button>/);
+  assert.match(html, /<a class="chart-embed-link" href="https:\/\/ourworldindata\.org\/grapher\/population-and-demography\?tab=map&amp;country=CHN~IND~USA" rel="noreferrer noopener" target="_blank">Our World in Data<\/a>/);
+  // The link is the embed source, never caption text.
+  assert.doesNotMatch(html, /chart-embed-text">[^<]*ourworldindata/);
+  // Markdown cannot place a frame, and the reader adds the control later.
+  assert.doesNotMatch(html, /<iframe|<script|<form|<textarea/);
+  assert.match(html, /<blockquote>\n<p>An ordinary quote stays a quote\.<\/p>\n<\/blockquote>/);
+});
+
+test('only Our World in Data grapher links become charts', () => {
+  const render = createRenderer(stubVault());
+  const allowed = [
+    'https://ourworldindata.org/grapher/life-expectancy',
+    'https://www.ourworldindata.org/grapher/life-expectancy?tab=chart&country=World',
+    'https://OURWORLDINDATA.ORG/grapher/life-expectancy',
+    'https://archive.ourworldindata.org/20261124-173438/grapher/population-and-demography.html?tab=map',
+  ];
+  for (const url of allowed) {
+    const html = render({ id: 'Allowed', body: `> [!chart] A chart\n> ${url}` });
+    assert.equal((html.match(/class="chart-embed"/g) ?? []).length, 1, url);
+    assert.match(html, /<button class="chart-embed-load"/, url);
+  }
+
+  const refused = [
+    'http://ourworldindata.org/grapher/life-expectancy',
+    '//ourworldindata.org/grapher/life-expectancy',
+    'https://ourworldindata.org:8443/grapher/life-expectancy',
+    'https://ourworldindata.org./grapher/life-expectancy',
+    'https://ourworldindata.org.evil.example/grapher/life-expectancy',
+    'https://ourworldindata.org/grapher/life-expectancy.metadata.json',
+    'https://ourworldindata.org/grapher/life-expectancy.csv',
+    'https://ourworldindata.org/grapher/',
+    'https://ourworldindata.org/other-page',
+    'https://ourworldindata.org/grapher/../../other',
+    'https://example.com/grapher/life-expectancy',
+    'https://archive.ourworldindata.org/grapher/life-expectancy.html',
+    'https://user:pass@ourworldindata.org/grapher/life-expectancy',
+    'javascript:alert(1)',
+    'not a url',
+  ];
+  for (const url of refused) {
+    const html = render({ id: 'Refused', body: `> [!chart] A chart\n> ${url}` });
+    assert.equal((html.match(/class="chart-embed"/g) ?? []).length, 0, url);
+    assert.match(html, /data-chart-unsupported="true"/, url);
+    assert.doesNotMatch(html, /<iframe|data-chart-src|<a /, url);
+  }
+
+  // The link that did not qualify is shown as escaped text, never as a link.
+  const shown = render({ id: 'Shown', body: '> [!chart] A chart\n> https://example.com/grapher/x?a=1&b="2"' });
+  assert.match(shown, /The link here was https:\/\/example\.com\/grapher\/x\?a=1&amp;b=&quot;2&quot;\./);
+  assert.doesNotMatch(shown, /<a /);
+});
+
+test('a chart callout keeps its chart across a blank quote line', () => {
+  const render = createRenderer(stubVault());
+  const html = render({
+    id: 'Blank',
+    body: [
+      '> [!chart] How many people live in the world',
+      '>',
+      '> The United Nations estimates every country each year.',
+      '>',
+      '> https://ourworldindata.org/grapher/population-and-demography',
+    ].join('\n'),
+  });
+  assert.equal((html.match(/class="chart-embed"/g) ?? []).length, 1);
+  assert.match(html, /data-chart-src="https:\/\/ourworldindata\.org\/grapher\/population-and-demography"/);
+  assert.match(html, /<p class="chart-embed-text">The United Nations estimates every country each year\.<\/p>/);
+  assert.doesNotMatch(html, /data-chart-unsupported/);
+});
+
+test('a chart callout without a link, and a chart title with markup, stay inert', () => {
+  const render = createRenderer(stubVault());
+  const escaped = render({
+    id: 'Escapes',
+    body: '> [!chart] He said "hello" & <b>bold</b> <script>alert(1)</script>\n> Caption <img src=x onerror=alert(1)>.\n> https://ourworldindata.org/grapher/life-expectancy',
+  });
+  assert.doesNotMatch(escaped, /<script>|<b>|<img/);
+  assert.match(escaped, /data-chart-title="He said &quot;hello&quot; &amp; &lt;b&gt;bold&lt;\/b&gt; &lt;script&gt;alert\(1\)&lt;\/script&gt;"/);
+  assert.match(escaped, /&lt;img src=x onerror=alert\(1\)&gt;/);
+
+  const missing = render({ id: 'Missing', body: '> [!chart] A chart\n> No link here.' });
+  assert.equal((missing.match(/class="chart-embed"/g) ?? []).length, 0);
+  assert.match(missing, /data-chart-unsupported="true"/);
+
+  // A callout with a different name is untouched.
+  const plain = render({ id: 'Plain', body: '> [!note] Not a chart\n> Keep as a quote.' });
+  assert.match(plain, /<blockquote>\n<p>\[!note\] Not a chart\nKeep as a quote\.<\/p>\n<\/blockquote>/);
+});
+
+test('chart cards are styled, and a hover preview hides the control', async () => {
+  const css = await readFile('reader/public/styles.css', 'utf8');
+  // The renderer's class names and the stylesheet must keep agreeing.
+  for (const selector of ['.note-content .chart-embed {', '.note-content .chart-embed-frame {', '.note-content .chart-embed-unsupported {']) {
+    assert.ok(css.includes(selector), `${selector} must be styled`);
+  }
+  assert.match(css, /\.preview-content \.chart-embed-note,/);
+  assert.match(css, /\.preview-content \.chart-embed-actions \{/);
+});
+
+test('every subject note links to a heading that exists in World data', async () => {
+  const vault = await loadVault('vault');
+  const render = createRenderer(vault);
+  const worldData = render(vault.notes.get('World data'));
+  const headings = new Set([...worldData.matchAll(/<h2 id="([^"]+)"/g)].map((match) => match[1]));
+  assert.equal(headings.size, 6);
+  // Six charts, each one an Our World in Data grapher link.
+  assert.equal((worldData.match(/data-chart-src="https:\/\/ourworldindata\.org\/grapher\//g) ?? []).length, 6);
+  assert.doesNotMatch(worldData, /<iframe/);
+
+  const linked = new Set();
+  for (const id of ['Physical wellness', 'Mental Health', 'Intillectual', 'financial wellness', 'social skills']) {
+    const note = vault.notes.get(id);
+    assert.ok(note, `${id} must exist`);
+    const matches = [...render(note).matchAll(/data-note-id="World data" data-heading="([^"]+)"/g)];
+    assert.equal(matches.length, 1, `${id} should link to one World data heading`);
+    linked.add(matches[0][1]);
+  }
+  assert.equal(linked.size, 5, 'each subject points at its own section');
+  for (const heading of linked) assert.ok(headings.has(heading), `${heading} must be a heading in World data`);
+});
+
 /* --------------------------------------------------- build: activity flag --- */
 
 test('the build publishes only a boolean activity flag and no raw frontmatter', async () => {
@@ -205,7 +348,7 @@ test('the build publishes only a boolean activity flag and no raw frontmatter', 
     assert.match(shell, /src="\.\/app\.js"/);
     assert.match(shell, /href="\.\/"/);
     assert.match(shell, /href="\.\/activity-collection\.css"/);
-    for (const asset of ['activity-catalog.js', 'activity-collection.js', 'activity-collection.css']) {
+    for (const asset of ['activity-catalog.js', 'activity-collection.js', 'activity-collection.css', 'chart-embed.js']) {
       assert.equal(await readFile(join(out, asset), 'utf8'), await readFile(join('reader/public', asset), 'utf8'),
         `${asset} ships unchanged on the static project path`);
     }

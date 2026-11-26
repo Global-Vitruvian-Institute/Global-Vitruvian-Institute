@@ -9,6 +9,7 @@
  */
 import MarkdownIt from 'markdown-it'
 import GithubSlugger from 'github-slugger'
+import { chartEmbedTarget } from '../public/chart-embed.js'
 
 const IMAGE_TARGET = /\.(png|jpe?g|gif|webp|avif|svg)$/i
 // Markdown-it installs this on every instance; captured so the custom image rule
@@ -109,6 +110,44 @@ export function createRenderer(vault, { resolveDesign = () => null } = {}) {
     }
   })
 
+  // `> [!chart] Title` becomes a chart card, never an iframe. The note supplies a
+  // title, a caption and one Our World in Data link; the reader supplies the
+  // embed, on request. An unsupported link stays inert text rather than a frame.
+  md.core.ruler.push('chart_embeds', (state) => {
+    const tokens = state.tokens
+    for (let index = 0; index < tokens.length; index += 1) {
+      if (tokens[index].type !== 'blockquote_open'
+        || tokens[index + 1]?.type !== 'paragraph_open'
+        || tokens[index + 2]?.type !== 'inline') continue
+      const first = tokens[index + 2]
+      const match = first.content.match(/^\[!chart\][ \t]*([^\n]*)/)
+      if (!match) continue
+      let end = index + 1
+      let depth = 1
+      for (; end < tokens.length; end += 1) {
+        if (tokens[end].type === 'blockquote_open') depth += 1
+        if (tokens[end].type === 'blockquote_close') depth -= 1
+        if (!depth) break
+      }
+      if (depth) continue
+
+      // Every paragraph of the callout is body. A blank `>` line inside the
+      // callout therefore cannot silently drop the chart.
+      const paragraphs = []
+      for (let at = index + 1; at < end; at += 1) {
+        if (tokens[at].type === 'inline') paragraphs.push(tokens[at].content)
+      }
+      const body = paragraphs.join('\n').replace(/^\[!chart\][^\n]*\n?/, '')
+
+      const token = new state.Token('chart_embed', '', 0)
+      token.block = true
+      token.level = tokens[index].level
+      token.content = chartEmbedHtml(match[1], body, text => md.renderInline(text, state.env))
+      tokens.splice(index, end - index + 1, token)
+    }
+  })
+  md.renderer.rules.chart_embed = (tokens, index) => tokens[index].content
+
   // Heading anchors, slugged the way Obsidian slugs them.
   const slugger = new GithubSlugger()
   md.core.ruler.push('heading_ids', (state) => {
@@ -198,6 +237,42 @@ export function createRenderer(vault, { resolveDesign = () => null } = {}) {
     rendered.set(note.id, html)
     return html
   }
+}
+
+/**
+ * One chart card. The body holds an optional caption plus the grapher URL; the
+ * first line that is an allowed chart link is the embed, and the rest is prose.
+ */
+function chartEmbedHtml(rawTitle, rawBody, inline) {
+  const lines = String(rawBody).split('\n').map(line => line.trim()).filter(Boolean)
+  const at = lines.findIndex(line => chartEmbedTarget(line))
+  if (at === -1) {
+    // The mistake stays readable and inert: the author sees the link that did
+    // not qualify, and the reader never gets a frame from it.
+    const offender = lines.find(line => /^[a-z][a-z0-9+.-]*:/i.test(line))
+    return '<p class="chart-embed-unsupported" data-chart-unsupported="true">Chart not shown: '
+      + 'only an Our World in Data grapher link can be embedded.'
+      + `${offender ? ` The link here was ${escapeHtml(offender)}.` : ''}</p>\n`
+  }
+  const url = chartEmbedTarget(lines[at])
+  const title = String(rawTitle).trim()
+  // The caption is ordinary note prose: links and emphasis still resolve.
+  const caption = inline(lines.filter((_, index) => index !== at).join(' '))
+  const href = escapeHtml(url.href)
+  const head = [
+    title ? `<p class="chart-embed-title">${escapeHtml(title)}</p>` : '',
+    caption ? `<p class="chart-embed-text">${caption}</p>` : '',
+  ].join('')
+  return [
+    `<figure class="chart-embed" data-chart-src="${href}"${title ? ` data-chart-title="${escapeHtml(title)}"` : ''}>`,
+    head ? `<figcaption class="chart-embed-head">${head}</figcaption>` : '',
+    '<div class="chart-embed-body">',
+    '<p class="chart-embed-note">This chart is not loaded yet. Loading it fetches data from ourworldindata.org.</p>',
+    '<p class="chart-embed-actions"><button class="chart-embed-load" type="button" data-chart-load>Load chart</button></p>',
+    '</div>',
+    `<p class="chart-embed-source">Chart: <a class="chart-embed-link" href="${href}" rel="noreferrer noopener" target="_blank">Our World in Data</a></p>`,
+    '</figure>',
+  ].filter(Boolean).join('\n')
 }
 
 function splitInner(inner) {
