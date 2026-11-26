@@ -1396,70 +1396,82 @@ test('the activity control never appears in a preview or in the Markdown', { ski
 
 /* ------------------------------------------------------- chart embeds --- */
 
-test('a chart card is inert until it is asked for, and then loads one frame', { skip: !playwright }, async () => {
+test('a chart card loads its chart with the note, and a hover preview does not', { skip: !playwright }, async () => {
   const { context, page, errors } = await openPage({ url: '/?note=World%20data' });
   try {
     await waitForNote(page, 'World data');
     const pane = lastPane(page);
     const cards = pane.locator('figure.chart-embed');
     assert.equal(await cards.count(), 6);
-    assert.equal(await pane.locator('.chart-embed iframe').count(), 0, 'no frame before the reader asks');
-    assert.equal(await pane.locator('.chart-embed-load').count(), 6);
     assert.equal(await pane.locator('[data-chart-unsupported]').count(), 0);
-    // Opening the note asked nobody for anything: a frame is the only thing here
-    // that could have made a request, and there is none.
-    const duringLoad = await page.evaluate(() => performance.getEntriesByType('resource')
-      .map((entry) => entry.name).filter((name) => name.includes('ourworldindata')));
-    assert.deepEqual(duringLoad, []);
+    // Every card carries its own frame: no button, no placeholder.
+    assert.equal(await pane.locator('.chart-embed iframe').count(), 6);
+    assert.equal(await pane.locator('.chart-embed button').count(), 0);
+    assert.equal(await pane.locator('.chart-embed-body:empty').count(), 0);
 
     const first = cards.first();
     assert.equal(await first.locator('.chart-embed-title').textContent(), 'How many people live in the world');
     assert.match(await first.locator('.chart-embed-text').textContent(), /United Nations estimates the population/);
-    assert.match(await first.locator('.chart-embed-note').textContent(), /not loaded yet/);
+    const frame = first.locator('iframe.chart-embed-frame');
+    assert.equal(await frame.getAttribute('title'), 'How many people live in the world');
+    assert.equal(await frame.getAttribute('referrerpolicy'), 'no-referrer');
+    assert.equal(await frame.getAttribute('loading'), 'lazy');
+    assert.match(await frame.getAttribute('sandbox'), /allow-scripts/);
+    assert.match(await frame.getAttribute('src'), /^https:\/\/ourworldindata\.org\/grapher\/population-and-demography\?tab=map&/);
     const source = first.locator('.chart-embed-source a');
     assert.equal(await source.textContent(), 'Our World in Data');
     assert.equal(await source.getAttribute('target'), '_blank');
     assert.equal(await source.getAttribute('rel'), 'noreferrer noopener');
     assert.match(await source.getAttribute('href'), /^https:\/\/ourworldindata\.org\/grapher\/population-and-demography\?tab=map&/);
 
-    // The press is what asks for the chart, and it asks exactly once.
+    // Opening the note is what asks for the charts. Each frame defers its own
+    // request until it is near the view, as Our World in Data's embed snippet
+    // does, so every card has asked for its chart by the time it is reached.
     const requests = [];
-    await page.route((url) => url.hostname.endsWith('ourworldindata.org'), (route) => {
-      requests.push(route.request().url());
-      route.abort();
+    const chartRequested = async (expected) => {
+      for (let attempt = 0; attempt < 40 && requests.length < expected; attempt += 1) {
+        await page.waitForTimeout(100);
+      }
+      assert.ok(requests.length >= expected, `expected ${expected} chart requests, saw ${requests.length}`);
+    };
+    page.on('request', (request) => {
+      if (request.url().includes('ourworldindata.org')) requests.push(request.url());
     });
-    const requested = page.waitForRequest((request) => request.url().includes('ourworldindata.org'), { timeout: 15000 });
-    await first.locator('.chart-embed-load').click();
-    await requested;
-    const frame = first.locator('iframe.chart-embed-frame');
-    await frame.waitFor();
-    assert.equal(await first.locator('.chart-embed-load').count(), 0, 'the control is replaced by the chart');
-    assert.equal(await pane.locator('.chart-embed iframe').count(), 1, 'one frame, in the card that was asked');
-    assert.equal(await frame.getAttribute('title'), 'How many people live in the world');
-    assert.equal(await frame.getAttribute('referrerpolicy'), 'no-referrer');
-    assert.equal(await frame.getAttribute('loading'), 'lazy');
-    assert.match(await frame.getAttribute('sandbox'), /allow-scripts/);
-    assert.match(await frame.getAttribute('src'), /^https:\/\/ourworldindata\.org\/grapher\/population-and-demography\?tab=map&/);
-    // The card cannot load twice, and a source that is not an allowed grapher
-    // link is refused in the browser as well as at build time.
+    await page.route((url) => url.hostname.endsWith('ourworldindata.org'), (route) => route.abort());
+    await page.reload();
+    await waitForNote(page, 'World data');
+    await page.waitForFunction(() => document.querySelectorAll('.chart-embed iframe').length === 6);
+    await chartRequested(1);
+    for (let index = 0; index < 6; index += 1) {
+      await cards.nth(index).scrollIntoViewIfNeeded();
+      await chartRequested(index + 1);
+    }
+    assert.equal(requests.length, 6, 'each card asks for exactly its own chart');
+    assert.ok(requests.every((url) => url.startsWith('https://ourworldindata.org/grapher/')), requests.join(' '));
+
+    // A card cannot be mounted twice, and a source that is not an allowed
+    // grapher link is refused in the browser as well as at build time.
     const guard = await page.evaluate(async () => {
-      const { loadChartEmbed, chartEmbedTarget } = await import('./chart-embed.js');
-      const figure = document.querySelector('figure.chart-embed[data-chart-ready]');
-      const alreadyLoaded = loadChartEmbed(figure);
+      const { loadChartEmbed, mountChartEmbeds, chartEmbedTarget } = await import('./chart-embed.js');
+      const figure = document.querySelector('figure.chart-embed[data-chart-loaded="true"]');
+      const mountedAgain = loadChartEmbed(figure);
       const frames = figure.querySelectorAll('iframe').length;
       const copy = figure.cloneNode(true);
       copy.querySelector('iframe')?.remove();
-      copy.dataset.chartSrc = 'https://example.com/grapher/not-ours';
       delete copy.dataset.chartLoaded;
+      copy.dataset.chartSrc = 'https://example.com/grapher/not-ours';
       document.body.append(copy);
       const tampered = loadChartEmbed(copy);
       const tamperedFrames = copy.querySelectorAll('iframe').length;
+      mountChartEmbeds(copy);
+      const mountedByWalk = copy.querySelectorAll('iframe').length;
       copy.remove();
       return {
-        alreadyLoaded,
+        mountedAgain,
         frames,
         tampered,
         tamperedFrames,
+        mountedByWalk,
         rejectsPort: chartEmbedTarget('https://ourworldindata.org:8443/grapher/life-expectancy') === null,
         rejectsSuffix: chartEmbedTarget('https://ourworldindata.org.evil.example/grapher/life-expectancy') === null,
         rejectsArchiveWithoutTimestamp: chartEmbedTarget('https://archive.ourworldindata.org/grapher/life-expectancy.html') === null,
@@ -1467,22 +1479,20 @@ test('a chart card is inert until it is asked for, and then loads one frame', { 
       };
     });
     assert.deepEqual(guard, {
-      alreadyLoaded: false,
+      mountedAgain: false,
       frames: 1,
       tampered: false,
       tamperedFrames: 0,
+      mountedByWalk: 0,
       rejectsPort: true,
       rejectsSuffix: true,
       rejectsArchiveWithoutTimestamp: true,
       accepts: 'ourworldindata.org',
     });
-    assert.equal(await pane.locator('.chart-embed iframe').count(), 1);
-    assert.equal(await pane.locator('.chart-embed-load').count(), 5, 'the other cards are still waiting');
-    assert.ok(requests.length >= 1);
 
-    // A hover preview shows the card's words and no control to press. The
-    // reader dismisses a preview on any scroll, including its own post-render
-    // restoration, so ask again until the card is really on screen.
+    // A hover preview shows the card's words and mounts nothing, so it fetches
+    // nothing. The reader dismisses a preview on any scroll, including its own
+    // post-render restoration, so ask again until the card is really on screen.
     await page.goto('/?note=Base%20Note');
     await waitForNote(page, 'Vitruvian');
     const preview = page.locator('#preview');
@@ -1495,8 +1505,7 @@ test('a chart card is inert until it is asked for, and then loads one frame', { 
     await preview.waitFor();
     await page.waitForFunction(() => /World data/.test(document.querySelector('#preview-content')?.textContent ?? ''));
     assert.equal(await page.locator('#preview .chart-embed').count(), 6, 'the preview shows every card in the note');
-    assert.equal(await page.locator('#preview .chart-embed-load:visible').count(), 0, 'no control to press in a preview');
-    assert.equal(await page.locator('#preview iframe').count(), 0);
+    assert.equal(await page.locator('#preview .chart-embed iframe').count(), 0, 'a preview mounts no chart');
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -1511,8 +1520,6 @@ test('a chart card and its frame fit a phone', { skip: !playwright }, async () =
     const cardBox = await card.boundingBox();
     assert.ok(cardBox.x >= 0 && cardBox.x + cardBox.width <= config.mobileViewport.width + 0.5);
     assert.equal(await card.evaluate((node) => node.scrollWidth <= node.clientWidth), true);
-    await page.route((url) => url.hostname.endsWith('ourworldindata.org'), (route) => route.abort());
-    await card.locator('.chart-embed-load').click();
     const frame = card.locator('iframe.chart-embed-frame');
     await frame.waitFor();
     const frameBox = await frame.boundingBox();

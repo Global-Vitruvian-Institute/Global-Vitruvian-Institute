@@ -110,9 +110,10 @@ export function createRenderer(vault, { resolveDesign = () => null } = {}) {
     }
   })
 
-  // `> [!chart] Title` becomes a chart card, never an iframe. The note supplies a
-  // title, a caption and one Our World in Data link; the reader supplies the
-  // embed, on request. An unsupported link stays inert text rather than a frame.
+  // `> [!chart] Title` becomes a chart card. The note supplies a title, a
+  // caption and one Our World in Data link; the reader mounts the frame in the
+  // card, so a hover preview shows the words without fetching anything. An
+  // unsupported link stays inert text rather than a frame.
   md.core.ruler.push('chart_embeds', (state) => {
     const tokens = state.tokens
     for (let index = 0; index < tokens.length; index += 1) {
@@ -266,10 +267,8 @@ function chartEmbedHtml(rawTitle, rawBody, inline) {
   return [
     `<figure class="chart-embed" data-chart-src="${href}"${title ? ` data-chart-title="${escapeHtml(title)}"` : ''}>`,
     head ? `<figcaption class="chart-embed-head">${head}</figcaption>` : '',
-    '<div class="chart-embed-body">',
-    '<p class="chart-embed-note">This chart is not loaded yet. Loading it fetches data from ourworldindata.org.</p>',
-    '<p class="chart-embed-actions"><button class="chart-embed-load" type="button" data-chart-load>Load chart</button></p>',
-    '</div>',
+    // The reader mounts the frame here, so a hover preview stays static.
+    '<div class="chart-embed-body"></div>',
     `<p class="chart-embed-source">Chart: <a class="chart-embed-link" href="${href}" rel="noreferrer noopener" target="_blank">Our World in Data</a></p>`,
     '</figure>',
   ].filter(Boolean).join('\n')

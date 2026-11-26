@@ -2,14 +2,16 @@
  * Our World in Data chart cards.
  *
  * A note never contains an iframe. A `> [!chart]` callout renders a title, a
- * caption, a source link and one button; this module turns that card into a real
- * embed when — and only when — the reader presses the button. Opening a note
- * therefore never contacts a third party on the reader's behalf, which is the
- * same rule remote images already follow.
+ * caption, a source link and an empty body; this module puts the real chart in
+ * that body when the note is shown in a pane.
  *
- * `chartEmbedTarget` is the allowlist, and it is shared: the build refuses to
- * emit a card for anything but an Our World in Data grapher URL, and the browser
- * re-checks the URL before it becomes a frame.
+ * Two things follow from mounting frames here rather than in the Markdown:
+ *
+ *  - Hover previews render the same note HTML but are never mounted, so a
+ *    preview shows the card's words and fetches nothing.
+ *  - `chartEmbedTarget` is the one allowlist. The build refuses to emit a card
+ *    for anything but an Our World in Data grapher URL, and the browser checks
+ *    the URL again before it becomes a frame.
  */
 
 const LIVE_HOSTS = new Set(['ourworldindata.org', 'www.ourworldindata.org'])
@@ -50,6 +52,8 @@ export function chartEmbedFrame(figure, doc = document) {
   frame.className = 'chart-embed-frame'
   frame.src = target.href
   frame.title = figure.dataset.chartTitle || 'Our World in Data chart'
+  // Our World in Data's own embed snippet defers an offscreen chart, and so do
+  // we: the frame is in the page, the request waits until it is near the view.
   frame.setAttribute('loading', 'lazy')
   frame.setAttribute('referrerpolicy', 'no-referrer')
   frame.setAttribute('allow', FRAME_ALLOW)
@@ -58,8 +62,8 @@ export function chartEmbedFrame(figure, doc = document) {
 }
 
 /**
- * Replace one card's placeholder with the chart. Returns false when the card has
- * already been loaded or when its URL is not an allowed grapher link.
+ * Put one card's chart in its body. Returns false when the card has already
+ * been mounted or when its URL is not an allowed grapher link.
  */
 export function loadChartEmbed(figure, doc = document) {
   if (!figure || figure.dataset.chartLoaded === 'true') return false
@@ -71,19 +75,10 @@ export function loadChartEmbed(figure, doc = document) {
   return true
 }
 
-/**
- * Wire every unloaded card in a rendered article. Each card owns its own
- * listener, so nothing here outlives the note it belongs to.
- */
-export function decorateChartEmbeds(root) {
+/** Mount every chart in a rendered article. Each card is mounted once. */
+export function mountChartEmbeds(root) {
   if (!root?.querySelectorAll) return
   for (const figure of root.querySelectorAll('figure.chart-embed[data-chart-src]')) {
-    if (figure.dataset.chartReady === 'true') continue
-    figure.dataset.chartReady = 'true'
-    const button = figure.querySelector('[data-chart-load]')
-    if (!button) continue
-    button.addEventListener('click', () => {
-      loadChartEmbed(figure)
-    })
+    loadChartEmbed(figure)
   }
 }

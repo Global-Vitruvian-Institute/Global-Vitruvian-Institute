@@ -19,8 +19,8 @@ Keep the amount of text small, but use natural, complete sentences. A request fo
   > https://ourworldindata.org/grapher/life-expectancy
   ```
 
-  The first line is the title, the link is the embed, and the other lines are the caption. Only `ourworldindata.org` and `archive.ourworldindata.org` grapher links are accepted; anything else stays inert text instead of a frame. Describe what the chart shows or what to look at, and never invent a number: the chart states its own data, and its title, subtitle and source are visible on Our World in Data.
-- A chart is not fetched until the reader presses **Load chart**, so a note cannot contact another site on its own. Say so when a page collects several charts, as [[World data]] does.
+  The first line is the title, the link is the embed, and the other lines are the caption. Only `ourworldindata.org` and `archive.ourworldindata.org` grapher links are accepted; anything else shows a note with the offending link as plain text instead of a frame. Describe what the chart shows or what to look at, and never invent a number: the chart states its own data, and its title, subtitle and source are visible on Our World in Data.
+- The reader mounts each chart when the note is shown in a pane, and the frame defers its own request until it is near the view. Opening the note therefore contacts ourworldindata.org, which is why [[World data]] says so in its first paragraph. A hover preview renders the card and mounts nothing.
 - Linking notes supports exploration; it does not require a course sequence.
 
 ## Sources read for this pass

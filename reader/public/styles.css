@@ -926,12 +926,6 @@ input {
   font-size: 24px;
 }
 
-/* A hover preview shows what the note says, never a control to press. */
-.preview-content .chart-embed-note,
-.preview-content .chart-embed-actions {
-  display: none;
-}
-
 .preview-loading {
   color: var(--muted);
   font-family: var(--font-ui);
@@ -1568,9 +1562,9 @@ input {
 /* --------------------------------------------------------- chart embeds --- */
 
 /*
- * A chart card is a request, not a request already made. The note carries the
- * title, the caption and the source; the frame itself appears only when the
- * reader asks for it, so opening a note never contacts another site.
+ * A chart card: the note carries the title, the caption and the source, and the
+ * reader mounts the Our World in Data frame in the body. A hover preview renders
+ * the same card and never mounts it.
  */
 .note-content .chart-embed {
   margin: 1.6em 0;
@@ -1607,33 +1601,9 @@ input {
   gap: 10px;
 }
 
-.note-content .chart-embed-note {
-  max-width: 62ch;
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.note-content .chart-embed-actions {
-  margin: 0;
-}
-
-.note-content .chart-embed-load {
-  padding: 7px 13px;
-  border: 1px solid var(--primary);
-  border-radius: var(--radius);
-  background: var(--primary);
-  color: var(--on-primary);
-  font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 1.2;
-  cursor: pointer;
-}
-
-.note-content .chart-embed-load:hover {
-  border-color: var(--primary-hover);
-  background: var(--primary-hover);
+/* A preview mounts nothing, so the body stays empty and takes no space. */
+.note-content .chart-embed-body:empty {
+  display: none;
 }
 
 .note-content .chart-embed-frame {

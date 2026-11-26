@@ -5,7 +5,7 @@ parents: ["Base Note"]
 
 Charts about the world are easier to look at than to picture. These come from [Our World in Data](https://ourworldindata.org/), a research project that publishes its data and its sources openly.
 
-None of them load on their own. Each one waits until you press **Load chart**, because loading a chart fetches it from ourworldindata.org rather than from this site. That request goes to their servers, as any website visit would; nothing you have written here is part of it. The charts wait so that reading a note never quietly contacts another website on your behalf.
+The charts load with this page, so opening it fetches them from ourworldindata.org. That request goes to their servers, as any website visit would; nothing you have written here is part of it. You can also follow the link under any chart to read it on their site.
 
 ## Population
 

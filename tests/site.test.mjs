@@ -143,7 +143,7 @@ test('a non-activity callout stays an ordinary blockquote', () => {
 
 /* -------------------------------------------------------- renderer: charts --- */
 
-test('a chart callout renders a card the reader has to ask for, never a frame', () => {
+test('a chart callout renders a card, and the Markdown itself carries no frame', () => {
   const render = createRenderer(stubVault({ 'Base Note': 'Vitruvian' }));
   const html = render({
     id: 'World data',
@@ -162,12 +162,13 @@ test('a chart callout renders a card the reader has to ask for, never a frame', 
   assert.match(html, /<figure class="chart-embed" data-chart-src="https:\/\/ourworldindata\.org\/grapher\/population-and-demography\?tab=map&amp;country=CHN~IND~USA" data-chart-title="How many people live in the world">/);
   assert.match(html, /<figcaption class="chart-embed-head"><p class="chart-embed-title">How many people live in the world<\/p>/);
   assert.match(html, /<p class="chart-embed-text">The United Nations estimates every country each year\. See <a class="note-link" href="\/Base%20Note" data-note-id="Base Note">the home page<\/a>\.<\/p>/);
-  assert.match(html, /<button class="chart-embed-load" type="button" data-chart-load>Load chart<\/button>/);
+  assert.match(html, /<div class="chart-embed-body"><\/div>/);
   assert.match(html, /<a class="chart-embed-link" href="https:\/\/ourworldindata\.org\/grapher\/population-and-demography\?tab=map&amp;country=CHN~IND~USA" rel="noreferrer noopener" target="_blank">Our World in Data<\/a>/);
   // The link is the embed source, never caption text.
   assert.doesNotMatch(html, /chart-embed-text">[^<]*ourworldindata/);
-  // Markdown cannot place a frame, and the reader adds the control later.
-  assert.doesNotMatch(html, /<iframe|<script|<form|<textarea/);
+  // The reader mounts the frame, so the published Markdown holds none: a hover
+  // preview of this note can therefore fetch nothing.
+  assert.doesNotMatch(html, /<iframe|<script|<form|<textarea|<button/);
   assert.match(html, /<blockquote>\n<p>An ordinary quote stays a quote\.<\/p>\n<\/blockquote>/);
 });
 
@@ -182,7 +183,7 @@ test('only Our World in Data grapher links become charts', () => {
   for (const url of allowed) {
     const html = render({ id: 'Allowed', body: `> [!chart] A chart\n> ${url}` });
     assert.equal((html.match(/class="chart-embed"/g) ?? []).length, 1, url);
-    assert.match(html, /<button class="chart-embed-load"/, url);
+    assert.match(html, /<div class="chart-embed-body"><\/div>/, url);
   }
 
   const refused = [
@@ -252,14 +253,13 @@ test('a chart callout without a link, and a chart title with markup, stay inert'
   assert.match(plain, /<blockquote>\n<p>\[!note\] Not a chart\nKeep as a quote\.<\/p>\n<\/blockquote>/);
 });
 
-test('chart cards are styled, and a hover preview hides the control', async () => {
+test('chart cards are styled', async () => {
   const css = await readFile('reader/public/styles.css', 'utf8');
   // The renderer's class names and the stylesheet must keep agreeing.
-  for (const selector of ['.note-content .chart-embed {', '.note-content .chart-embed-frame {', '.note-content .chart-embed-unsupported {']) {
+  for (const selector of ['.note-content .chart-embed {', '.note-content .chart-embed-frame {', '.note-content .chart-embed-unsupported {', '.note-content .chart-embed-body:empty {']) {
     assert.ok(css.includes(selector), `${selector} must be styled`);
   }
-  assert.match(css, /\.preview-content \.chart-embed-note,/);
-  assert.match(css, /\.preview-content \.chart-embed-actions \{/);
+
 });
 
 test('every subject note links to a heading that exists in World data', async () => {
